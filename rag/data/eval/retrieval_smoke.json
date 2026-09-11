@@ -1,0 +1,12 @@
+[
+  {"query": "Как добавить машиночитаемую доверенность МЧД?", "expected_source_type": "official_manual", "expected_keywords": ["доверенност"]},
+  {"query": "Как зарегистрироваться на портале поставщиков?", "expected_source_type": "official_kb", "expected_keywords": ["регистрац"]},
+  {"query": "Как создать оферту?", "expected_source_type": "official_manual", "expected_keywords": ["оферт"]},
+  {"query": "Как пользоваться личным кабинетом поставщика?", "expected_source_type": "official_manual", "expected_keywords": ["портал", "профил"]},
+  {"query": "Как подписать электронный акт?", "expected_source_type": "official_manual", "expected_keywords": ["акт"]},
+  {"query": "Что делать, если не загружается XML доверенности?", "expected_source_type": "support_ticket", "expected_keywords": ["xml", "доверенност"]},
+  {"query": "Как изменить данные профиля пользователя?", "expected_source_type": "official_kb", "expected_keywords": ["профил"]},
+  {"query": "Как работать с контрактом на портале?", "expected_source_type": "official_kb", "expected_keywords": ["контракт"]},
+  {"query": "Ошибка при входе в личный кабинет", "expected_source_type": "support_ticket", "expected_keywords": ["ошибк", "вход"]},
+  {"query": "Где посмотреть темы и подтемы обращений?", "expected_source_type": "support_taxonomy", "expected_keywords": ["тема", "подтема"]}
+]

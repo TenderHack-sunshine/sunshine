@@ -1,122 +1,125 @@
-# Tender Hack 2026 — local RAG MVP
+# Tender Hack 2026 — локальный RAG MVP
 
-This repository is a local-first support-assistant retrieval MVP for the Moscow Supplier Portal. It parses official manuals, cleans historical tickets, and returns source-backed evidence. It does not call external inference or search APIs, and it never downloads model weights automatically.
+Локальный ассистент поддержки Портала поставщиков Москвы. Проект не вызывает внешние LLM/API и не скачивает веса моделей автоматически. Ответ формируется только из найденного evidence или заменяется передачей оператору.
 
-## Architecture
+## Текущий статус данных
+
+Ingestion завершён и не является частью текущего retrieval workflow.
+
+| Источник | Chunks | Семантика |
+| --- | ---: | --- |
+| Knowledge Base | 253 | `official_kb` / `official` |
+| PDF-инструкции | 734 | `official_manual` / `official` |
+| Исторические обращения | 25,044 | `support_ticket` / `case_history` |
+| Таксономия обращений | 86 | `support_taxonomy` / `taxonomy` |
+| Всего local + KB | 26,117 | canonical corpus |
+
+Canonical preparation валидирует отсутствие пустого текста и повторяющихся `chunk_id`. Оригинальные JSONL не изменяются.
+
+## Архитектура MVP на Intel-only ноутбуке
 
 ```text
-User Query
-    ↓
-Moderation
-    ↓
-Topic Routing
-    ↓
-Hybrid Retrieval
-    ├── BM25
-    └── Dense Retrieval (local Qdrant + local embedding model)
-    ↓
-RRF Fusion
-    ↓
-Optional local Reranker
-    ↓
-Confidence Gate
-    ├── enough evidence → extractive answer with source/page
-    └── insufficient evidence → human operator fallback
+Запрос
+  -> profanity rejection
+  -> typo/format normalization
+  -> technical / non-technical router
+  -> official evidence search
+  -> [только technical] BM25 по historical tickets
+  -> weighted Reciprocal Rank Fusion
+  -> document diversity для tickets
+  -> extractive evidence или operator fallback
 ```
 
-Official manuals have `authority: manual`. Historical tickets have `authority: historical_ticket`, and generic ticket resolutions such as “Исправлено” are down-ranked rather than used as primary evidence.
+Для текущего Intel Iris Xe ноутбука full-corpus Qwen3 embedding не запускается: CPU inference 26k tickets занимает непрактичное время. Вместо этого:
 
-## Layout
+- `official_kb`, `official_manual`, `support_taxonomy` ищутся через local official retriever; Qwen3 + Qdrant dense path сохранён для будущего ускоренного оборудования.
+- `support_ticket` индексируется полностью локальным Russian BM25.
+- Historical tickets добавляются только к technical/error запросам и не могут занять весь top-k: официальный источник имеет более высокий RRF weight, а для tickets ограничен повтор одного `document_id`.
 
-- `data/raw/manuals/` — PDF/DOCX/HTML manuals (untracked)
-- `data/raw/tickets/` — ticket export and official topic taxonomy (untracked)
-- `data/processed/` — generated JSONL (untracked)
-- `data/indexes/` — local index artifacts (untracked)
-- `models/qwen3-embedding-0.6b/` and `models/qwen3-reranker-0.6b/` — pre-downloaded local weights (untracked)
-- `src/ingestion/` — parsers, structure-aware chunking, ticket cleaning
-- `src/retrieval/` — BM25, local embeddings/Qdrant, RRF, optional reranking
+RRF объединяет ранги, а не сравнивает raw BM25 score с cosine similarity.
 
-## Install
+## Структура
 
-Use Python 3.10+ and install the project dependencies:
+- `src/ingestion/` — готовые парсеры и chunking; их не нужно запускать для обычного поиска.
+- `src/retrieval/canonical.py` — canonical merge и validation.
+- `src/retrieval/bm25.py` — dependency-free Russian inverted-index BM25.
+- `src/retrieval/mvp.py` — two-path retrieval, RRF, source priority и diversity.
+- `src/retrieval/embeddings/qwen3.py` — сохранённый локальный Qwen3 embedding component.
+- `src/moderation/`, `src/routing/`, `src/generation/` — раннее отклонение profanity, нормализация, routing, extractive fallback.
+- `data/raw/`, `data/processed/`, `data/indexes/`, `models/` — локальные данные, generated artifacts и веса; они не коммитятся.
 
-```bash
+## Установка
+
+Нужен Python 3.10+.
+
+```powershell
 python -m pip install -e ".[dev]"
 ```
 
-Copy `.env.example` to `.env` only when overriding defaults. Paths are relative to the repository root by default.
+При необходимости скопируйте `.env.example` в `.env`. Все пути в конфигурации относительны к корню `rag/`.
 
-## Build and query locally
+## Быстрый запуск MVP
 
-Manual ingestion uses document-level semantic chunking by default: sections persist across PDF pages, adjacent atomic units are embedded locally, and high adaptive-distance boundaries are preferred. It requires `models/qwen3-embedding-0.6b/`; use the explicit legacy fallback only when local model inference is unavailable:
-
-```bash
-python scripts/ingest_documents.py --strategy recursive
-```
-
-## Generic local-file ingestion
-
-The generic local-file runner recursively supports PDF, XLSX, DOCX, CSV, TXT, Markdown, HTML, and JSON. It emits a separate local-files dataset and skips `data/raw/zakupki_kb/`, because that source has its dedicated structured ingester.
+Выполняйте команды из папки `rag/`.
 
 ```powershell
-python scripts/ingest.py --input data/raw --output data/processed/files --verbose
+# 1. Собрать и проверить canonical corpus
+python scripts/prepare_index.py
+
+# 2. Построить BM25 по всем 25k historical tickets
+python scripts/build_ticket_bm25.py
+
+# 3. Выполнить end-to-end поиск
+python scripts/search_mvp.py "ошибка при добавлении МЧД"
 ```
 
-Use `--force` to replace that command’s prior `documents.jsonl`, `chunks.jsonl`, and `report.json`; it does not alter Knowledge Base outputs.
+Ориентировочные показатели на hackathon laptop:
 
-1. Put manuals under `data/raw/manuals/`; put the two Excel files under `data/raw/tickets/`.
-2. Start Qdrant locally, for example:
+- BM25 build: ~6–20 секунд;
+- 43,991 уникальных нормализованных terms;
+- сериализованный ticket index: ~83 MB;
+- non-technical query: около 1 ms;
+- technical query с ticket path: около 14–30 ms.
 
-   ```bash
-   docker run --rm -p 6333:6333 -v "${PWD}/qdrant_storage:/qdrant/storage" qdrant/qdrant
-   ```
-
-3. Parse and chunk manuals:
-
-   ```bash
-   python scripts/ingest_documents.py
-   ```
-
-4. Clean ticket history (adjust the two filenames if needed):
-
-   ```bash
-   python scripts/prepare_tickets.py "data/raw/tickets/Выгрузка СТП за 2026.xlsx" "data/raw/tickets/Темы_подтемы_обращений.xlsx"
-   ```
-
-5. With the local embedding model in `models/qwen3-embedding-0.6b/`, build the local Qdrant collection. This includes manuals and historical-ticket examples, with their distinct authority metadata:
-
-   ```bash
-   python scripts/build_index.py
-   ```
-
-6. Start the CLI demo:
-
-   ```bash
-   python scripts/search_demo.py
-   ```
-
-It displays route, evidence source/page/score, and an extractive answer or operator fallback. If Qdrant or a model is not available, the in-process BM25 retrieval still works; the CLI expects the Qdrant index for dense retrieval.
-
-## Tests
-
-```bash
-pytest
-```
-
-The unit tests use fixtures/mocks and do not download models or contact Qdrant.
-
-## Moscow Supplier Portal Knowledge Base
-
-The Knowledge Base source uses its structured JSON API, never rendered-page scraping. Set `ZAKUPKI_KB_API_URL` to the verified API endpoint—the repository deliberately does not guess it—and then fetch the configured supplier section:
+Примеры запросов:
 
 ```powershell
-python scripts/ingest_zakupki_kb.py --section-type supplier --save-raw
+python scripts/search_mvp.py "как добавить МЧД"
+python scripts/search_mvp.py "как создать оферту"
+python scripts/search_mvp.py "как зарегистрироваться поставщику"
+python scripts/search_mvp.py "не подписывается оферта"
+python scripts/search_mvp.py "не открывается котировочная сессия"
 ```
 
-For reproducible, offline parsing of a saved response:
+Non-technical queries возвращают official evidence. Technical queries возвращают official evidence первым и добавляют relevant historical ticket как supporting troubleshooting context.
+
+## Dense Qwen3 + Qdrant (будущее ускоренное оборудование)
+
+Используется только локальная `models/qwen3-embedding-0.6b`. Qwen3 documents получают обычный текст, а queries — встроенный model prompt `query`. Вектор нормализуется для cosine similarity.
 
 ```powershell
-python scripts/ingest_zakupki_kb.py --from-file data/raw/zakupki_kb/supplier.json
+# Малый smoke test; не запускайте full-corpus embedding на CPU-only ноутбуке
+python scripts/index_qdrant.py --limit 100 --smoke-size 100 --batch-size 1 --recreate
+
+# Поиск по готовой Qdrant collection
+python scripts/search.py "как добавить машиночитаемую доверенность"
 ```
 
-The command writes `zakupki_kb_documents.jsonl`, `zakupki_kb_chunks.jsonl`, and `zakupki_kb_report.json` beneath `data/processed/`. It does not create embeddings, connect to Qdrant, or download article images.
+Collection называется `zakupki_knowledge`; point ID детерминированно строится из `chunk_id`, поэтому повторный upsert идемпотентен. Qdrant payload сохраняет canonical fields и source-specific metadata.
+
+## Что намеренно не включено
+
+- reranking;
+- генеративный LLM-ответ;
+- full dense embedding historical tickets на CPU;
+- изменения ingestion/parsing pipeline.
+
+Текущий generator — extractive: он показывает лучший источник. При отсутствии достаточного evidence отдаёт операторский fallback; profanity отклоняется до retrieval.
+
+## Тесты
+
+```powershell
+python -m pytest -q
+```
+
+Тесты используют fixtures/mocks или локальный temporary Qdrant и не требуют model download, GPU либо запущенного Qdrant service.

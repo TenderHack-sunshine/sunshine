@@ -19,7 +19,7 @@ class Settings:
     model_dir: Path | None = None
     qdrant_host: str = os.getenv("QDRANT_HOST", "localhost")
     qdrant_port: int = int(os.getenv("QDRANT_PORT", "6333"))
-    qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "tender_documents")
+    qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "zakupki_knowledge")
     bm25_top_k: int = int(os.getenv("BM25_TOP_K", "20"))
     dense_top_k: int = int(os.getenv("DENSE_TOP_K", "20"))
     fusion_top_k: int = int(os.getenv("FUSION_TOP_K", "20"))
