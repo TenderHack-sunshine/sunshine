@@ -155,3 +155,19 @@ python -m pytest -q
 ```
 
 Тесты используют fixtures/mocks или локальный temporary Qdrant и не требуют model download, GPU либо запущенного Qdrant service.
+
+## HTTP adapter for backend
+
+После подготовки `data/processed/*chunks.jsonl` запустите существующий RAG
+pipeline как HTTP-сервис для backend:
+
+```powershell
+$env:USE_QDRANT = "0"
+python scripts/serve.py --port 8000
+```
+
+Адаптер предоставляет `GET /healthz` и `POST /v1/process`. Он вызывает уже
+существующие moderation, retrieval и confidence gate и возвращает backend
+статусы `answered`, `blocked` или `escalated`. Для моделей вне `rag/models`
+укажите `MODEL_DIR`; в текущем workspace это `../../models` при запуске из
+папки `rag/`.
