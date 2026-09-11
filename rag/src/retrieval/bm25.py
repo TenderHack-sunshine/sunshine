@@ -121,7 +121,7 @@ class RussianBM25Retriever:
     def search(self, query: str, top_k: int = 20, filters: dict[str, str | list[str]] | None = None) -> list[dict]:
         ranked = sorted(self._score(query).items(), key=lambda item: item[1], reverse=True)
         results = []
-        for index, score in ranked:
+        for rank, (index, score) in enumerate(ranked, start=1):
             document = self.documents[index]
             if filters and any(
                 document.get(field) not in (value if isinstance(value, list) else [value]) for field, value in filters.items()
@@ -129,8 +129,9 @@ class RussianBM25Retriever:
                 continue
             results.append({
                 "chunk_id": document.get("chunk_id"), "document_id": document.get("document_id"), "text": document.get("text", ""),
-                "source_type": document.get("source_type"), "authority": document.get("authority"), "score": float(score),
-                "retrieval_method": "bm25", "metadata": dict(document.get("metadata") or {}),
+                "source_type": document.get("source_type"), "authority": document.get("authority"),
+                "score": float(score), "raw_score": float(score), "rank": rank, "retrieval_method": "bm25",
+                "metadata": dict(document.get("metadata") or {}),
                 "source_path": document.get("source_path"), "title": document.get("title"), "section": document.get("section"),
                 "page_start": document.get("page_start"), "page_end": document.get("page_end"),
             })
