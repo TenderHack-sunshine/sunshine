@@ -1,0 +1,61 @@
+[
+  {
+    "categoryName": "Закупочные процедуры",
+    "categoryId": 76000,
+    "articlesByService": [
+      {
+        "serviceName": "Консультация",
+        "serviceId": 58886,
+        "articles": [
+          {
+            "id": 101,
+            "staticId": 201,
+            "largeName": "Как найти закупку?",
+            "previewText": "<p>Короткая версия.</p>",
+            "selfServicePortal": "<p>Чтобы найти закупку:</p><ul><li>перейдите в <a href=\"/registry\">реестр</a></li><li>выберите фильтр</li></ul><figure><img src=\"/image.png\" alt=\"Рисунок 1\"/><figcaption>Рисунок 1</figcaption></figure>",
+            "instructionOperator": "<p>Проверьте роль пользователя.</p>",
+            "status": "Опубликована",
+            "artStatus": "Активная",
+            "sectionTypes": {"supplier": "Поставщики"},
+            "updatedDate": "16.07.2026 15:01:16",
+            "createdDate": "01.01.0001 00:00:00"
+          },
+          {
+            "id": 102,
+            "staticId": 202,
+            "largeName": "Правила котировочной сессии",
+            "detailText": "<h2>Правила</h2><p>Регламент определяет порядок участия в котировочной сессии.</p>",
+            "status": "Опубликована",
+            "artStatus": "Активная",
+            "sectionTypes": {"supplier": "Поставщики"},
+            "updatedDate": "01.08.2026 12:00:00"
+          },
+          {
+            "id": 103,
+            "staticId": 203,
+            "largeName": "Ошибка загрузки документа",
+            "chatBots": "<p>Если не загружается файл, проверьте формат. Повторите загрузку после проверки файла.</p>",
+            "status": "Опубликована",
+            "artStatus": "Активная",
+            "sectionTypes": {"supplier": "Поставщики"},
+            "updatedDate": "02.08.2026 12:00:00"
+          },
+          {
+            "id": 104,
+            "largeName": "Скрытая статья",
+            "previewText": "<p>Не должна попасть в выдачу.</p>",
+            "status": "Черновик",
+            "artStatus": "Активная"
+          },
+          {
+            "id": 101,
+            "largeName": "Дубликат",
+            "previewText": "<p>Дубликат.</p>",
+            "status": "Опубликована",
+            "artStatus": "Активная"
+          }
+        ]
+      }
+    ]
+  }
+]

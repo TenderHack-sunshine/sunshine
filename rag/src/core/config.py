@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+
+def _path_env(name: str, default: Path) -> Path:
+    value = os.getenv(name)
+    return Path(value).expanduser() if value else default
+
+
+@dataclass(frozen=True)
+class Settings:
+    """Central, local-only configuration for the MVP."""
+
+    root_dir: Path = Path(__file__).resolve().parents[2]
+    data_dir: Path | None = None
+    model_dir: Path | None = None
+    qdrant_host: str = os.getenv("QDRANT_HOST", "localhost")
+    qdrant_port: int = int(os.getenv("QDRANT_PORT", "6333"))
+    qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "tender_documents")
+    bm25_top_k: int = int(os.getenv("BM25_TOP_K", "20"))
+    dense_top_k: int = int(os.getenv("DENSE_TOP_K", "20"))
+    fusion_top_k: int = int(os.getenv("FUSION_TOP_K", "20"))
+    final_top_k: int = int(os.getenv("FINAL_TOP_K", "5"))
+    rrf_k: int = int(os.getenv("RRF_K", "60"))
+    min_evidence_score: float = float(os.getenv("MIN_EVIDENCE_SCORE", "0.02"))
+    semantic_chunking_enabled: bool = os.getenv("SEMANTIC_CHUNKING_ENABLED", "1").lower() not in {"0", "false", "no"}
+    semantic_breakpoint_percentile: float = float(os.getenv("SEMANTIC_BREAKPOINT_PERCENTILE", "85"))
+    min_chunk_tokens: int = int(os.getenv("MIN_CHUNK_TOKENS", "100"))
+    target_chunk_tokens: int = int(os.getenv("TARGET_CHUNK_TOKENS", "300"))
+    max_chunk_tokens: int = int(os.getenv("MAX_CHUNK_TOKENS", "500"))
+    forced_split_overlap_tokens: int = int(os.getenv("FORCED_SPLIT_OVERLAP_TOKENS", "50"))
+    zakupki_kb_api_url: str | None = os.getenv("ZAKUPKI_KB_API_URL")
+    zakupki_kb_base_url: str = os.getenv("ZAKUPKI_KB_BASE_URL", "https://zakupki.mos.ru")
+    zakupki_kb_section_types: tuple[str, ...] = tuple(
+        item.strip() for item in os.getenv("ZAKUPKI_KB_SECTION_TYPES", "supplier").split(",") if item.strip()
+    )
+    zakupki_kb_timeout_seconds: float = float(os.getenv("ZAKUPKI_KB_TIMEOUT_SECONDS", "20"))
+    zakupki_kb_max_retries: int = int(os.getenv("ZAKUPKI_KB_MAX_RETRIES", "3"))
+    zakupki_kb_max_chunk_tokens: int = int(os.getenv("ZAKUPKI_KB_MAX_CHUNK_TOKENS", "700"))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "data_dir", _path_env("DATA_DIR", self.root_dir / "data") if self.data_dir is None else Path(self.data_dir))
+        object.__setattr__(self, "model_dir", _path_env("MODEL_DIR", self.root_dir / "models") if self.model_dir is None else Path(self.model_dir))
+
+    @property
+    def manuals_dir(self) -> Path:
+        return self.data_dir / "raw" / "manuals"
+
+    @property
+    def tickets_dir(self) -> Path:
+        return self.data_dir / "raw" / "tickets"
+
+    @property
+    def processed_dir(self) -> Path:
+        return self.data_dir / "processed"
+
+    @property
+    def embedding_model_path(self) -> Path:
+        return self.model_dir / "qwen3-embedding-0.6b"
+
+    @property
+    def reranker_model_path(self) -> Path:
+        return self.model_dir / "qwen3-reranker-0.6b"

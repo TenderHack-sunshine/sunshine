@@ -1,0 +1,46 @@
+# Secrets and local environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Hackathon source data and generated artifacts (inside the RAG project)
+rag/data/raw/manuals/*
+!rag/data/raw/manuals/.gitkeep
+rag/data/raw/tickets/*
+!rag/data/raw/tickets/.gitkeep
+rag/data/raw/zakupki_kb/*
+!rag/data/raw/zakupki_kb/.gitkeep
+rag/data/processed/*
+!rag/data/processed/.gitkeep
+rag/data/indexes/*
+!rag/data/indexes/.gitkeep
+rag/qdrant_storage/
+rag/qdrant_data/
+
+# Local runtime/log files and OS metadata
+*.log
+.DS_Store
+Thumbs.db
+~$*
+
+# Locally downloaded model weights
+rag/models/*
+!rag/models/.gitkeep
