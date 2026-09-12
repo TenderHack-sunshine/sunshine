@@ -423,11 +423,11 @@ export default function App() {
       {page === "admin" && <AdminPanel />}
 
       {page === "support" && <main className="page-content">
-        <nav className="breadcrumbs" aria-label="Навигационная цепочка">
+        {/* <nav className="breadcrumbs" aria-label="Навигационная цепочка">
           <a href="#">Главная</a>
           <span className="sep" aria-hidden="true">/</span>
           <span className="current">Поддержка</span>
-        </nav>
+        </nav> */}
 
         <div className="page-heading-row">
           <h1 className="page-heading">Поддержка</h1>
