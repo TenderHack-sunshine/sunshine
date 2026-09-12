@@ -3,6 +3,8 @@ import AdminPanel from "./AdminPanel";
 import portalLogo from "@/imports/image-1.png";
 import { useAuth } from "./auth/AuthContext";
 import AuthPage from "./auth/AuthPage";
+import { apiPost } from "./api/client";
+import type { ApiSource, SupportResponse } from "./api";
 
 type ChatState = "idle" | "processing" | "needs_clarification" | "answered" | "insufficient_knowledge" | "escalated";
 
@@ -31,6 +33,7 @@ type Message = {
   isEscalation?: boolean;
   isEscalated?: boolean;
   isClarification?: boolean;
+  requestId?: string;
 };
 
 const DEMO_SCENARIOS = {
@@ -178,6 +181,14 @@ function renderText(text: string) {
 
 function delay(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
+function toSources(sources: ApiSource[] = []): Source[] {
+  return sources.map((source) => ({
+    title: source.document,
+    section: source.section || "Материал базы знаний",
+    page: source.page ? `стр. ${source.page}` : undefined,
+  }));
+}
+
 export default function App() {
   const auth = useAuth();
   const [page, setPage] = useState<"support" | "admin">("support");
@@ -189,6 +200,8 @@ export default function App() {
   const [feedbackGiven, setFeedbackGiven] = useState<Record<number, "yes" | "no">>({});
   const [showPostFeedback, setShowPostFeedback] = useState<Set<number>>(new Set());
   const [pendingScenario, setPendingScenario] = useState<ScenarioKey | null>(null);
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
+  const [chatError, setChatError] = useState("");
   const msgIdRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -224,6 +237,8 @@ export default function App() {
     setFeedbackGiven({});
     setShowPostFeedback(new Set());
     setPendingScenario(null);
+    setActiveRequestId(null);
+    setChatError("");
     msgIdRef.current = 0;
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }
@@ -280,21 +295,55 @@ export default function App() {
     }
   }
 
+  function showBackendResponse(response: SupportResponse) {
+    const shared = { role: "assistant" as const, requestId: response.request_id };
+    if (response.status === "answered") {
+      addMsg({ ...shared, text: response.answer || "Ответ не найден.", sources: toSources(response.sources) });
+      setChatState("answered");
+      announce("Ответ получен");
+      return;
+    }
+    if (response.status === "need_clarification") {
+      addMsg({ ...shared, text: response.clarification_question || "Уточните детали обращения.", isClarification: true });
+      setChatState("needs_clarification");
+      announce("Нужно уточнение");
+      return;
+    }
+    if (response.status === "escalated") {
+      addMsg({ ...shared, isEscalated: true });
+      setChatState("escalated");
+      announce("Обращение передано специалисту");
+      return;
+    }
+    addMsg({ ...shared, text: response.answer || "Не удалось обработать обращение." });
+    setChatState("idle");
+  }
+
+  async function submitToBackend(text: string) {
+    addMsg({ role: "user", text });
+    const processingId = addMsg({ role: "assistant", isProcessing: true, processingLabel: PROC_STAGES[0] });
+    setChatState("processing");
+    setChatError("");
+    try {
+      const response = activeRequestId && chatState === "needs_clarification"
+        ? await apiPost<SupportResponse>(`/support/requests/${encodeURIComponent(activeRequestId)}/messages`, { message: text })
+        : await apiPost<SupportResponse>("/support/requests", { message: text });
+      removeMsg(processingId);
+      setActiveRequestId(response.request_id);
+      showBackendResponse(response);
+    } catch (error) {
+      removeMsg(processingId);
+      setChatState("idle");
+      setChatError(error instanceof Error ? error.message : "Не удалось отправить обращение.");
+    }
+  }
+
   async function handleClarificationReply(reply: string) {
-    addMsg({ role: "user", text: reply });
-    setPendingScenario(null);
-    if (pendingScenario) await runProcessing(pendingScenario);
+    await submitToBackend(reply);
   }
 
   async function handleArbitrary(text: string) {
-    addMsg({ role: "user", text });
-    await delay(700);
-    addMsg({
-      role: "assistant",
-      text: "Уточните, пожалуйста: к какому разделу Портала относится ваш вопрос? Это поможет быстрее найти нужную информацию.",
-      isClarification: true,
-    });
-    setChatState("needs_clarification");
+    await submitToBackend(text);
   }
 
   function handleEscalate() {
@@ -309,10 +358,10 @@ export default function App() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     if (chatState === "needs_clarification") {
-      handleClarificationReply(text);
+      void handleClarificationReply(text);
       return;
     }
-    handleArbitrary(text);
+    void handleArbitrary(text);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -333,9 +382,15 @@ export default function App() {
     });
   }
 
-  function giveFeedback(id: number, val: "yes" | "no") {
+  async function giveFeedback(id: number, val: "yes" | "no", requestId?: string) {
     setFeedbackGiven(prev => ({ ...prev, [id]: val }));
     if (val === "no") setShowPostFeedback(prev => new Set(prev).add(id));
+    if (!requestId) return;
+    try {
+      await apiPost("/feedback", { support_request_id: requestId, rating: val === "yes" ? 5 : 1, comment: "", resolved: val === "yes" });
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : "Не удалось сохранить оценку.");
+    }
   }
 
   const QUICK_Q = [
@@ -489,7 +544,7 @@ export default function App() {
                     </p>
                     <div className="quick-questions">
                       {QUICK_Q.map(q => (
-                        <button key={q.key} className="quick-btn" onClick={() => runScenario(q.key, q.label)}>
+                        <button key={q.key} className="quick-btn" onClick={() => void submitToBackend(q.label)}>
                           {q.label}
                         </button>
                       ))}
@@ -638,13 +693,13 @@ export default function App() {
                             {!fb ? (
                               <>
                                 <span className="feedback-label">Ответ помог?</span>
-                                <button className="feedback-btn yes" onClick={() => giveFeedback(msg.id, "yes")}>
+                                <button className="feedback-btn yes" onClick={() => void giveFeedback(msg.id, "yes", msg.requestId)}>
                                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
                                     <path d="M2 5.5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                                   </svg>
                                   Да
                                 </button>
-                                <button className="feedback-btn no" onClick={() => giveFeedback(msg.id, "no")}>Нет</button>
+                                <button className="feedback-btn no" onClick={() => void giveFeedback(msg.id, "no", msg.requestId)}>Нет</button>
                               </>
                             ) : fb === "yes" ? (
                               <span style={{ fontSize: 13, color: "#238636" }}>Спасибо за оценку</span>
@@ -665,6 +720,7 @@ export default function App() {
               </div>
 
               <div className="chat-composer">
+                {chatError && <div role="alert" style={{ color: "#b42318", padding: "0 16px 8px" }}>{chatError}</div>}
                 <form onSubmit={e => { e.preventDefault(); handleSend(); }}>
                   <label htmlFor="chat-input" className="sr-only">Введите вопрос</label>
                   <div className="composer-field">
