@@ -29,9 +29,11 @@ type Server struct {
 func NewServer(support *application.SupportService, tickets *application.TicketService, feedback *application.FeedbackService, analytics *application.AnalyticsService, logger *slog.Logger) http.Handler {
 	server := &Server{support: support, tickets: tickets, feedback: feedback, analytics: analytics, logger: logger}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	health := func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
+	}
+	mux.HandleFunc("GET /health", health)
+	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("POST /support/requests", server.createRequest)
 	mux.HandleFunc("GET /support/requests/{id}", server.getRequest)
 	mux.HandleFunc("POST /support/requests/{id}/messages", server.addMessage)
@@ -331,10 +333,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "INVALID_STATE", "Operation is not allowed in the current state")
 	case errors.Is(err, application.ErrDuplicateFeedback):
 		writeError(w, http.StatusConflict, "FEEDBACK_EXISTS", "Feedback already exists")
-	case errors.Is(err, application.ErrAIUnavailable):
-		writeError(w, http.StatusServiceUnavailable, "AI_UNAVAILABLE", "AI service is temporarily unavailable")
-	case errors.Is(err, application.ErrInvalidAIResult):
-		writeError(w, http.StatusBadGateway, "AI_INVALID_RESPONSE", "AI service returned an invalid result")
+	case errors.Is(err, application.ErrRAGUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "RAG_UNAVAILABLE", "Сервис обработки обращения временно недоступен")
+	case errors.Is(err, application.ErrInvalidRAGResult):
+		writeError(w, http.StatusBadGateway, "RAG_INVALID_RESPONSE", "Сервис обработки обращения вернул некорректный ответ")
 	default:
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
 	}

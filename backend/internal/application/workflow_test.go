@@ -13,12 +13,12 @@ import (
 func TestSupportFlowAnswerClarificationAndEscalation(t *testing.T) {
 	store := newFakeStore()
 	confidence := 0.9
-	ai := &fakeAI{results: []port.AIResult{
+	rag := &fakeRAG{results: []port.ProcessResponse{
 		{Status: domain.AIStatusAnswered, Answer: "Инструкция найдена", Topic: "signature", SupportLevel: "L3", Confidence: &confidence},
 		{Status: domain.AIStatusNeedClarification, ClarificationQuestion: "Укажите номер закупки", Topic: "payments"},
 		{Status: domain.AIStatusEscalated, Topic: "payments", SupportLevel: "L2", Confidence: &confidence},
 	}}
-	service := NewSupportService(store, ai)
+	service := NewSupportService(store, rag)
 
 	answered, ticket, err := service.Create(context.Background(), Actor{UserID: "user-1"}, "Не работает подпись")
 	if err != nil || ticket != nil {
@@ -51,7 +51,7 @@ func TestSupportFlowAnswerClarificationAndEscalation(t *testing.T) {
 func TestTicketLifecycleFeedbackAnalyticsAndAIUnavailable(t *testing.T) {
 	store := newFakeStore()
 	confidence := 0.4
-	support := NewSupportService(store, &fakeAI{results: []port.AIResult{{Status: domain.AIStatusEscalated, Topic: "electronic_signature", SupportLevel: "L3", Confidence: &confidence}}})
+	support := NewSupportService(store, &fakeRAG{results: []port.ProcessResponse{{Status: domain.AIStatusEscalated, Topic: "electronic_signature", SupportLevel: "L3", Confidence: &confidence}}})
 	request, ticket, err := support.Create(context.Background(), Actor{UserID: "user-1"}, "Подпись не работает")
 	if err != nil || ticket == nil {
 		t.Fatalf("create escalated request: ticket=%v err=%v", ticket, err)
@@ -96,8 +96,8 @@ func TestTicketLifecycleFeedbackAnalyticsAndAIUnavailable(t *testing.T) {
 	}
 
 	failingStore := newFakeStore()
-	failing := NewSupportService(failingStore, &fakeAI{err: errors.New("offline")})
-	if _, _, err := failing.Create(context.Background(), Actor{UserID: "user-2"}, "Помогите"); !errors.Is(err, ErrAIUnavailable) {
+	failing := NewSupportService(failingStore, &fakeRAG{err: errors.New("offline")})
+	if _, _, err := failing.Create(context.Background(), Actor{UserID: "user-2"}, "Помогите"); !errors.Is(err, ErrRAGUnavailable) {
 		t.Fatalf("AI error=%v", err)
 	}
 	for _, saved := range failingStore.requests {
@@ -107,14 +107,14 @@ func TestTicketLifecycleFeedbackAnalyticsAndAIUnavailable(t *testing.T) {
 	}
 }
 
-type fakeAI struct {
-	results []port.AIResult
+type fakeRAG struct {
+	results []port.ProcessResponse
 	err     error
 }
 
-func (a *fakeAI) Process(_ context.Context, _ port.AIRequest) (port.AIResult, error) {
+func (a *fakeRAG) Process(_ context.Context, _ port.ProcessRequest) (port.ProcessResponse, error) {
 	if a.err != nil {
-		return port.AIResult{}, a.err
+		return port.ProcessResponse{}, a.err
 	}
 	result := a.results[0]
 	a.results = a.results[1:]
@@ -150,7 +150,7 @@ func (s *fakeStore) AddMessage(_ context.Context, m domain.Message) error {
 func (s *fakeStore) ListMessages(_ context.Context, id string) ([]domain.Message, error) {
 	return append([]domain.Message(nil), s.messages[id]...), nil
 }
-func (s *fakeStore) ApplyAIResult(_ context.Context, id string, result port.AIResult, message *domain.Message, ticket *domain.Ticket) error {
+func (s *fakeStore) ApplyRAGResult(_ context.Context, id string, result port.ProcessResponse, message *domain.Message, ticket *domain.Ticket) error {
 	request, ok := s.requests[id]
 	if !ok {
 		return ErrNotFound
@@ -183,7 +183,7 @@ func (s *fakeStore) ApplyAIResult(_ context.Context, id string, result port.AIRe
 	}
 	return nil
 }
-func (s *fakeStore) MarkAIFailed(_ context.Context, id string) error {
+func (s *fakeStore) MarkRAGFailed(_ context.Context, id string) error {
 	request := s.requests[id]
 	request.Status = domain.RequestStatusAIFailed
 	request.AIStatus = domain.AIStatusFailed

@@ -43,10 +43,10 @@ const (
 )
 
 type Source struct {
-	DocumentID string `json:"document_id"`
-	Title      string `json:"title"`
-	URL        string `json:"url"`
-	Page       *int   `json:"page,omitempty"`
+	Document string `json:"document"`
+	Section  string `json:"section,omitempty"`
+	Page     *int   `json:"page,omitempty"`
+	ChunkID  string `json:"chunk_id"`
 }
 
 type SupportRequest struct {

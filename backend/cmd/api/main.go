@@ -10,6 +10,7 @@ import (
 	"github.com/TenderHack-sunshine/sunshine/backend/internal/adapter"
 	"github.com/TenderHack-sunshine/sunshine/backend/internal/application"
 	"github.com/TenderHack-sunshine/sunshine/backend/internal/config"
+	"github.com/TenderHack-sunshine/sunshine/backend/internal/rag"
 	httptransport "github.com/TenderHack-sunshine/sunshine/backend/internal/transport/http"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,7 +33,7 @@ func main() {
 	}
 
 	store := adapter.NewPostgresStore(pool)
-	support := application.NewSupportService(store, adapter.NewHTTPAIClient(settings.AIServiceURL, settings.AIServiceTimeout))
+	support := application.NewSupportService(store, rag.NewClient(settings.RAGServiceURL, settings.RAGServiceTimeout))
 	tickets := application.NewTicketService(store)
 	feedback := application.NewFeedbackService(store)
 	analytics := application.NewAnalyticsService(store)

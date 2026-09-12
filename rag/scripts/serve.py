@@ -18,13 +18,13 @@ class Handler(BaseHTTPRequestHandler):
     service: RAGAPI
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path != "/healthz":
+        if self.path != "/health":
             self._write(HTTPStatus.NOT_FOUND, {"error": "route not found"})
             return
         self._write(HTTPStatus.OK, {"status": "ok"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/v1/process":
+        if self.path != "/process":
             self._write(HTTPStatus.NOT_FOUND, {"error": "route not found"})
             return
         try:

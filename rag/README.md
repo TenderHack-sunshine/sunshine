@@ -238,16 +238,18 @@ python -m pytest -q
 
 ## HTTP adapter for backend
 
-После подготовки `data/processed/*chunks.jsonl` запустите существующий RAG
-pipeline как HTTP-сервис для backend:
+После подготовки canonical corpus `data/processed/index/all_chunks.jsonl` и
+ticket BM25 index `data/indexes/support_tickets_bm25.pkl` запустите
+существующий RAG pipeline как HTTP-сервис для backend:
 
 ```powershell
 $env:USE_QDRANT = "0"
 python scripts/serve.py --port 8000
 ```
 
-Адаптер предоставляет `GET /healthz` и `POST /v1/process`. Он вызывает уже
+Адаптер предоставляет `GET /health` и `POST /process`. Он вызывает уже
 существующие moderation, retrieval и confidence gate и возвращает backend
-статусы `answered`, `blocked` или `escalated`. Для моделей вне `rag/models`
+статусы `answered`, `need_clarification`, `blocked` или `escalated`; правила
+для этих статусов определены в `src/application/pipeline.py`. Для моделей вне `rag/models`
 укажите `MODEL_DIR`; в текущем workspace это `../../models` при запуске из
 папки `rag/`.

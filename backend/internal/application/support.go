@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -17,13 +18,13 @@ type Actor struct{ UserID string }
 
 type SupportService struct {
 	store port.Store
-	ai    port.AIClient
+	rag   port.RAGClient
 	now   func() time.Time
 	newID func() (string, error)
 }
 
-func NewSupportService(store port.Store, ai port.AIClient) *SupportService {
-	return &SupportService{store: store, ai: ai, now: time.Now, newID: newID}
+func NewSupportService(store port.Store, rag port.RAGClient) *SupportService {
+	return &SupportService{store: store, rag: rag, now: time.Now, newID: newID}
 }
 
 func (s *SupportService) Create(ctx context.Context, actor Actor, text string) (domain.SupportRequest, *domain.Ticket, error) {
@@ -97,17 +98,18 @@ func (s *SupportService) ownedRequest(ctx context.Context, actor Actor, requestI
 
 func (s *SupportService) process(ctx context.Context, request domain.SupportRequest, conversation []domain.Message) (domain.SupportRequest, *domain.Ticket, error) {
 	last := conversation[len(conversation)-1]
-	result, err := s.ai.Process(ctx, port.AIRequest{RequestID: request.ID, UserID: request.UserID, Message: last.Text, Conversation: conversation})
+	result, err := s.rag.Process(ctx, port.ProcessRequest{Query: last.Text, ConversationID: request.ID, Context: conversation})
 	if err != nil {
-		_ = s.store.MarkAIFailed(ctx, request.ID)
-		return domain.SupportRequest{}, nil, ErrAIUnavailable
+		slog.Error("RAG processing failed", "support_request_id", request.ID, "user_id", request.UserID, "error", err)
+		_ = s.store.MarkRAGFailed(ctx, request.ID)
+		return domain.SupportRequest{}, nil, ErrRAGUnavailable
 	}
 
 	aiMessage, ticket, err := s.resultArtifacts(request, conversation, result)
 	if err != nil {
 		return domain.SupportRequest{}, nil, err
 	}
-	if err := s.store.ApplyAIResult(ctx, request.ID, result, aiMessage, ticket); err != nil {
+	if err := s.store.ApplyRAGResult(ctx, request.ID, result, aiMessage, ticket); err != nil {
 		return domain.SupportRequest{}, nil, err
 	}
 	updated, err := s.store.GetSupportRequest(ctx, request.ID)
@@ -117,7 +119,7 @@ func (s *SupportService) process(ctx context.Context, request domain.SupportRequ
 	return updated, ticket, nil
 }
 
-func (s *SupportService) resultArtifacts(request domain.SupportRequest, conversation []domain.Message, result port.AIResult) (*domain.Message, *domain.Ticket, error) {
+func (s *SupportService) resultArtifacts(request domain.SupportRequest, conversation []domain.Message, result port.ProcessResponse) (*domain.Message, *domain.Ticket, error) {
 	now := s.now().UTC()
 	messageText := ""
 	switch result.Status {
@@ -130,10 +132,10 @@ func (s *SupportService) resultArtifacts(request domain.SupportRequest, conversa
 	case domain.AIStatusEscalated:
 		messageText = "Ваше обращение передано специалисту технической поддержки."
 	default:
-		return nil, nil, ErrInvalidAIResult
+		return nil, nil, ErrInvalidRAGResult
 	}
 	if messageText == "" {
-		return nil, nil, ErrInvalidAIResult
+		return nil, nil, ErrInvalidRAGResult
 	}
 	messageID, err := s.newID()
 	if err != nil {
