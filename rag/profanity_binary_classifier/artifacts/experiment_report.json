@@ -1,0 +1,419 @@
+{
+  "data_validation": {
+    "row_count_by_split": {
+      "test": 540,
+      "train": 2520,
+      "validation": 540
+    },
+    "class_count_by_split": {
+      "test": {
+        "0": 270,
+        "1": 270
+      },
+      "train": {
+        "0": 1260,
+        "1": 1260
+      },
+      "validation": {
+        "0": 270,
+        "1": 270
+      }
+    },
+    "class_share_by_split": {
+      "test": {
+        "0": 0.5,
+        "1": 0.5
+      },
+      "train": {
+        "0": 0.5,
+        "1": 0.5
+      },
+      "validation": {
+        "0": 0.5,
+        "1": 0.5
+      }
+    }
+  },
+  "config": {
+    "seed": 42,
+    "max_length": 256,
+    "stride": 64,
+    "learning_rate": 2e-05,
+    "batch_size_gpu": 32,
+    "batch_size_cpu": 8,
+    "epochs": 5,
+    "min_epochs": 3,
+    "weight_decay": 0.01,
+    "target_recall": 0.95
+  },
+  "systems": {
+    "rule_based": {
+      "system": "rule_based",
+      "threshold": {
+        "threshold": 0.0,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666,
+        "target_recall": 0.95,
+        "target_recall_satisfied": true,
+        "reason": "max precision with recall >= 0.95"
+      },
+      "validation": {
+        "precision_class_1": 0.5,
+        "recall_class_1": 1.0,
+        "f1_class_1": 0.6666666666666666,
+        "macro_f1": 0.3333333333333333,
+        "pr_auc": 0.874074074074074,
+        "roc_auc": 0.874074074074074,
+        "confusion_matrix": {
+          "tn": 0,
+          "fp": 270,
+          "fn": 0,
+          "tp": 270
+        },
+        "false_positive_rate": 1.0,
+        "false_negative_rate": 0.0,
+        "false_positives_per_1000_clean": 1000.0,
+        "recall_by_example_type": {
+          "clean_support": null,
+          "gibberish_keyboard_smash": null,
+          "hard_negative_emotional_or_insult": null,
+          "obscenity_explicit": 1.0,
+          "obscenity_obfuscated": 1.0,
+          "obscenity_with_gibberish_noise": 1.0
+        },
+        "recall_by_transformation": {
+          "alternate_spelling": 1.0,
+          "explicit_or_base": 1.0,
+          "gibberish_after_obscenity": 1.0,
+          "gibberish_around_spaced_obscenity": 1.0,
+          "gibberish_inside_context": 1.0,
+          "gibberish_prefix": 1.0,
+          "gibberish_suffix": 1.0,
+          "gibberish_with_support_context": null,
+          "masked_symbols": 1.0,
+          "mixed_alphabet_or_leet": 1.0,
+          "natural_paraphrase": null,
+          "pure_gibberish": null,
+          "spaced_letters": 1.0,
+          "uppercase_gibberish": null,
+          "uppercase_or_emphasis": null
+        },
+        "masked_positive_count": 180,
+        "recall_masked_examples": 1.0
+      },
+      "test": {
+        "precision_class_1": 0.5,
+        "recall_class_1": 1.0,
+        "f1_class_1": 0.6666666666666666,
+        "macro_f1": 0.3333333333333333,
+        "pr_auc": 0.875925925925926,
+        "roc_auc": 0.875925925925926,
+        "confusion_matrix": {
+          "tn": 0,
+          "fp": 270,
+          "fn": 0,
+          "tp": 270
+        },
+        "false_positive_rate": 1.0,
+        "false_negative_rate": 0.0,
+        "false_positives_per_1000_clean": 1000.0,
+        "recall_by_example_type": {
+          "clean_support": null,
+          "gibberish_keyboard_smash": null,
+          "hard_negative_emotional_or_insult": null,
+          "obscenity_explicit": 1.0,
+          "obscenity_obfuscated": 1.0,
+          "obscenity_with_gibberish_noise": 1.0
+        },
+        "recall_by_transformation": {
+          "alternate_spelling": 1.0,
+          "explicit_or_base": 1.0,
+          "gibberish_after_obscenity": 1.0,
+          "gibberish_around_spaced_obscenity": 1.0,
+          "gibberish_inside_context": 1.0,
+          "gibberish_prefix": 1.0,
+          "gibberish_suffix": 1.0,
+          "gibberish_with_support_context": null,
+          "masked_symbols": 1.0,
+          "mixed_alphabet_or_leet": 1.0,
+          "natural_paraphrase": null,
+          "pure_gibberish": null,
+          "spaced_letters": 1.0,
+          "uppercase_gibberish": null,
+          "uppercase_or_emphasis": null
+        },
+        "masked_positive_count": 180,
+        "recall_masked_examples": 1.0
+      },
+      "validation_inference_seconds": 0.021021699998527765,
+      "test_inference_seconds": 0.019902700005332008,
+      "error_files": {
+        "validation": {
+          "false_positives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rule_based\\validation_false_positives_top20.csv",
+          "false_negatives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rule_based\\validation_false_negatives_top20.csv"
+        },
+        "test": {
+          "false_positives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rule_based\\test_false_positives_top20.csv",
+          "false_negatives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rule_based\\test_false_negatives_top20.csv"
+        }
+      }
+    },
+    "rubert_tiny_toxicity": {
+      "system": "rubert_tiny_toxicity",
+      "threshold": {
+        "threshold": 0.00014157392433844507,
+        "precision": 0.510934393638171,
+        "recall": 0.9518518518518518,
+        "f1": 0.6649417852522639,
+        "target_recall": 0.95,
+        "target_recall_satisfied": true,
+        "reason": "max precision with recall >= 0.95"
+      },
+      "validation": {
+        "precision_class_1": 0.510934393638171,
+        "recall_class_1": 0.9518518518518518,
+        "f1_class_1": 0.6649417852522639,
+        "macro_f1": 0.41064678839160423,
+        "pr_auc": 0.8743497131965827,
+        "roc_auc": 0.8073251028806585,
+        "confusion_matrix": {
+          "tn": 24,
+          "fp": 246,
+          "fn": 13,
+          "tp": 257
+        },
+        "false_positive_rate": 0.9111111111111111,
+        "false_negative_rate": 0.04814814814814815,
+        "false_positives_per_1000_clean": 911.1111111111111,
+        "recall_by_example_type": {
+          "clean_support": null,
+          "gibberish_keyboard_smash": null,
+          "hard_negative_emotional_or_insult": null,
+          "obscenity_explicit": 1.0,
+          "obscenity_obfuscated": 0.95,
+          "obscenity_with_gibberish_noise": 0.9111111111111111
+        },
+        "recall_by_transformation": {
+          "alternate_spelling": 0.9777777777777777,
+          "explicit_or_base": 1.0,
+          "gibberish_after_obscenity": 1.0,
+          "gibberish_around_spaced_obscenity": 0.8888888888888888,
+          "gibberish_inside_context": 0.7777777777777778,
+          "gibberish_prefix": 1.0,
+          "gibberish_suffix": 0.8888888888888888,
+          "gibberish_with_support_context": null,
+          "masked_symbols": 0.9555555555555556,
+          "mixed_alphabet_or_leet": 1.0,
+          "natural_paraphrase": null,
+          "pure_gibberish": null,
+          "spaced_letters": 0.8666666666666667,
+          "uppercase_gibberish": null,
+          "uppercase_or_emphasis": null
+        },
+        "masked_positive_count": 180,
+        "recall_masked_examples": 0.95
+      },
+      "test": {
+        "precision_class_1": 0.5121457489878543,
+        "recall_class_1": 0.937037037037037,
+        "f1_class_1": 0.662303664921466,
+        "macro_f1": 0.42292398435946715,
+        "pr_auc": 0.8708873909188719,
+        "roc_auc": 0.8162002743484223,
+        "confusion_matrix": {
+          "tn": 29,
+          "fp": 241,
+          "fn": 17,
+          "tp": 253
+        },
+        "false_positive_rate": 0.8925925925925926,
+        "false_negative_rate": 0.06296296296296296,
+        "false_positives_per_1000_clean": 892.5925925925926,
+        "recall_by_example_type": {
+          "clean_support": null,
+          "gibberish_keyboard_smash": null,
+          "hard_negative_emotional_or_insult": null,
+          "obscenity_explicit": 1.0,
+          "obscenity_obfuscated": 0.9222222222222223,
+          "obscenity_with_gibberish_noise": 0.9333333333333333
+        },
+        "recall_by_transformation": {
+          "alternate_spelling": 0.9333333333333333,
+          "explicit_or_base": 1.0,
+          "gibberish_after_obscenity": 1.0,
+          "gibberish_around_spaced_obscenity": 1.0,
+          "gibberish_inside_context": 0.8888888888888888,
+          "gibberish_prefix": 1.0,
+          "gibberish_suffix": 0.7777777777777778,
+          "gibberish_with_support_context": null,
+          "masked_symbols": 0.9333333333333333,
+          "mixed_alphabet_or_leet": 1.0,
+          "natural_paraphrase": null,
+          "pure_gibberish": null,
+          "spaced_letters": 0.8222222222222222,
+          "uppercase_gibberish": null,
+          "uppercase_or_emphasis": null
+        },
+        "masked_positive_count": 180,
+        "recall_masked_examples": 0.9222222222222223
+      },
+      "validation_inference_seconds": 10.400981799990404,
+      "test_inference_seconds": 9.594036599999527,
+      "error_files": {
+        "validation": {
+          "false_positives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rubert_tiny_toxicity\\validation_false_positives_top20.csv",
+          "false_negatives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rubert_tiny_toxicity\\validation_false_negatives_top20.csv"
+        },
+        "test": {
+          "false_positives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rubert_tiny_toxicity\\test_false_positives_top20.csv",
+          "false_negatives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\rubert_tiny_toxicity\\test_false_negatives_top20.csv"
+        }
+      }
+    },
+    "fine_tuned_rubert_tiny2": {
+      "system": "fine_tuned_rubert_tiny2",
+      "threshold": {
+        "threshold": 0.9943947792053223,
+        "precision": 1.0,
+        "recall": 0.9518518518518518,
+        "f1": 0.9753320683111955,
+        "target_recall": 0.95,
+        "target_recall_satisfied": true,
+        "reason": "max precision with recall >= 0.95"
+      },
+      "validation": {
+        "precision_class_1": 1.0,
+        "recall_class_1": 0.9518518518518518,
+        "f1_class_1": 0.9753320683111955,
+        "macro_f1": 0.9759119654395036,
+        "pr_auc": 1.0,
+        "roc_auc": 1.0,
+        "confusion_matrix": {
+          "tn": 270,
+          "fp": 0,
+          "fn": 13,
+          "tp": 257
+        },
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.04814814814814815,
+        "false_positives_per_1000_clean": 0.0,
+        "recall_by_example_type": {
+          "clean_support": null,
+          "gibberish_keyboard_smash": null,
+          "hard_negative_emotional_or_insult": null,
+          "obscenity_explicit": 1.0,
+          "obscenity_obfuscated": 1.0,
+          "obscenity_with_gibberish_noise": 0.7111111111111111
+        },
+        "recall_by_transformation": {
+          "alternate_spelling": 1.0,
+          "explicit_or_base": 1.0,
+          "gibberish_after_obscenity": 0.6666666666666666,
+          "gibberish_around_spaced_obscenity": 1.0,
+          "gibberish_inside_context": 0.6666666666666666,
+          "gibberish_prefix": 0.2222222222222222,
+          "gibberish_suffix": 1.0,
+          "gibberish_with_support_context": null,
+          "masked_symbols": 1.0,
+          "mixed_alphabet_or_leet": 1.0,
+          "natural_paraphrase": null,
+          "pure_gibberish": null,
+          "spaced_letters": 1.0,
+          "uppercase_gibberish": null,
+          "uppercase_or_emphasis": null
+        },
+        "masked_positive_count": 180,
+        "recall_masked_examples": 1.0
+      },
+      "test": {
+        "precision_class_1": 1.0,
+        "recall_class_1": 0.9333333333333333,
+        "f1_class_1": 0.9655172413793104,
+        "macro_f1": 0.9666295884315907,
+        "pr_auc": 1.0,
+        "roc_auc": 1.0,
+        "confusion_matrix": {
+          "tn": 270,
+          "fp": 0,
+          "fn": 18,
+          "tp": 252
+        },
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.06666666666666667,
+        "false_positives_per_1000_clean": 0.0,
+        "recall_by_example_type": {
+          "clean_support": null,
+          "gibberish_keyboard_smash": null,
+          "hard_negative_emotional_or_insult": null,
+          "obscenity_explicit": 1.0,
+          "obscenity_obfuscated": 1.0,
+          "obscenity_with_gibberish_noise": 0.6
+        },
+        "recall_by_transformation": {
+          "alternate_spelling": 1.0,
+          "explicit_or_base": 1.0,
+          "gibberish_after_obscenity": 0.5555555555555556,
+          "gibberish_around_spaced_obscenity": 1.0,
+          "gibberish_inside_context": 0.2222222222222222,
+          "gibberish_prefix": 0.2222222222222222,
+          "gibberish_suffix": 1.0,
+          "gibberish_with_support_context": null,
+          "masked_symbols": 1.0,
+          "mixed_alphabet_or_leet": 1.0,
+          "natural_paraphrase": null,
+          "pure_gibberish": null,
+          "spaced_letters": 1.0,
+          "uppercase_gibberish": null,
+          "uppercase_or_emphasis": null
+        },
+        "masked_positive_count": 180,
+        "recall_masked_examples": 1.0
+      },
+      "validation_inference_seconds": 11.246426199999405,
+      "test_inference_seconds": 8.706521799991606,
+      "error_files": {
+        "validation": {
+          "false_positives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\fine_tuned_rubert_tiny2\\validation_false_positives_top20.csv",
+          "false_negatives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\fine_tuned_rubert_tiny2\\validation_false_negatives_top20.csv"
+        },
+        "test": {
+          "false_positives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\fine_tuned_rubert_tiny2\\test_false_positives_top20.csv",
+          "false_negatives": "C:\\Users\\Я\\PycharmProjects\\sunshine\\rag\\profanity_binary_classifier\\artifacts\\fine_tuned_rubert_tiny2\\test_false_negatives_top20.csv"
+        }
+      }
+    }
+  },
+  "comparison_table_test": [
+    {
+      "system": "rule_based",
+      "split": "test",
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666,
+      "pr_auc": 0.875925925925926,
+      "fp_per_1000_clean": 1000.0,
+      "inference_seconds": 0.019902700005332008
+    },
+    {
+      "system": "rubert_tiny_toxicity",
+      "split": "test",
+      "precision": 0.5121457489878543,
+      "recall": 0.937037037037037,
+      "f1": 0.662303664921466,
+      "pr_auc": 0.8708873909188719,
+      "fp_per_1000_clean": 892.5925925925926,
+      "inference_seconds": 9.594036599999527
+    },
+    {
+      "system": "fine_tuned_rubert_tiny2",
+      "split": "test",
+      "precision": 1.0,
+      "recall": 0.9333333333333333,
+      "f1": 0.9655172413793104,
+      "pr_auc": 1.0,
+      "fp_per_1000_clean": 0.0,
+      "inference_seconds": 8.706521799991606
+    }
+  ]
+}

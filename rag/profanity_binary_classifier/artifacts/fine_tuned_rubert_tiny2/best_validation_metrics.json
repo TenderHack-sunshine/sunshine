@@ -1,0 +1,44 @@
+{
+  "precision_class_1": 1.0,
+  "recall_class_1": 0.9518518518518518,
+  "f1_class_1": 0.9753320683111955,
+  "macro_f1": 0.9759119654395036,
+  "pr_auc": 1.0,
+  "roc_auc": 1.0,
+  "confusion_matrix": {
+    "tn": 270,
+    "fp": 0,
+    "fn": 13,
+    "tp": 257
+  },
+  "false_positive_rate": 0.0,
+  "false_negative_rate": 0.04814814814814815,
+  "false_positives_per_1000_clean": 0.0,
+  "recall_by_example_type": {
+    "clean_support": NaN,
+    "gibberish_keyboard_smash": NaN,
+    "hard_negative_emotional_or_insult": NaN,
+    "obscenity_explicit": 1.0,
+    "obscenity_obfuscated": 1.0,
+    "obscenity_with_gibberish_noise": 0.7111111111111111
+  },
+  "recall_by_transformation": {
+    "alternate_spelling": 1.0,
+    "explicit_or_base": 1.0,
+    "gibberish_after_obscenity": 0.6666666666666666,
+    "gibberish_around_spaced_obscenity": 1.0,
+    "gibberish_inside_context": 0.6666666666666666,
+    "gibberish_prefix": 0.2222222222222222,
+    "gibberish_suffix": 1.0,
+    "gibberish_with_support_context": NaN,
+    "masked_symbols": 1.0,
+    "mixed_alphabet_or_leet": 1.0,
+    "natural_paraphrase": NaN,
+    "pure_gibberish": NaN,
+    "spaced_letters": 1.0,
+    "uppercase_gibberish": NaN,
+    "uppercase_or_emphasis": NaN
+  },
+  "masked_positive_count": 180,
+  "recall_masked_examples": 1.0
+}
