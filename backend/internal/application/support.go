@@ -14,6 +14,8 @@ import (
 
 const maxMessageLength = 8_000
 
+const escalatedFollowUpAcknowledgement = "Сообщение добавлено в обращение технической поддержки."
+
 type SupportService struct {
 	store port.Store
 	rag   port.RAGClient
@@ -54,7 +56,11 @@ func (s *SupportService) AddUserMessage(ctx context.Context, actor Actor, reques
 	if err != nil {
 		return domain.SupportRequest{}, nil, err
 	}
-	if request.Status != domain.RequestStatusNeedClarification {
+	switch request.Status {
+	case domain.RequestStatusAnswered, domain.RequestStatusBlocked, domain.RequestStatusNeedClarification, domain.RequestStatusAIFailed, domain.RequestStatusEscalated:
+		// A dialog remains open for follow-up questions after an answer,
+		// an insufficient answer, a clarification request, or escalation.
+	default:
 		return domain.SupportRequest{}, nil, ErrInvalidState
 	}
 	messageID, err := s.newID()
@@ -64,6 +70,20 @@ func (s *SupportService) AddUserMessage(ctx context.Context, actor Actor, reques
 	message := domain.Message{ID: messageID, RequestID: request.ID, Sender: domain.SenderUser, Text: strings.TrimSpace(text), CreatedAt: s.now().UTC()}
 	if err := s.store.AddMessage(ctx, message); err != nil {
 		return domain.SupportRequest{}, nil, err
+	}
+	if request.Status == domain.RequestStatusEscalated {
+		ackID, err := s.newID()
+		if err != nil {
+			return domain.SupportRequest{}, nil, err
+		}
+		ack := domain.Message{ID: ackID, RequestID: request.ID, Sender: domain.SenderAI, Text: escalatedFollowUpAcknowledgement, CreatedAt: s.now().UTC()}
+		if err := s.store.AddMessage(ctx, ack); err != nil {
+			return domain.SupportRequest{}, nil, err
+		}
+		if err := s.store.RefreshTicketContext(ctx, request.ID); err != nil {
+			return domain.SupportRequest{}, nil, err
+		}
+		return request, nil, nil
 	}
 	messages, err := s.store.ListMessages(ctx, request.ID)
 	if err != nil {

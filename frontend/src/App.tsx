@@ -261,15 +261,7 @@ export default function App() {
   }
 
   async function submitToBackend(text: string) {
-    const continuationId = activeRequestId && chatState === "needs_clarification" ? activeRequestId : null;
-    if (!continuationId && activeRequestId) {
-      setSelectedHistory(null);
-      setMessages([]);
-      setOpenSources(new Set());
-      setFeedbackGiven({});
-      setShowPostFeedback(new Set());
-      msgIdRef.current = 0;
-    }
+    const continuationId = activeRequestId;
     addMsg({ role: "user", text });
     const processingId = addMsg({ role: "assistant", isProcessing: true, processingLabel: PROC_STAGES[0] });
     setChatState("processing");
@@ -569,6 +561,7 @@ export default function App() {
                             ) : showPost ? (
                               <div className="post-feedback">
                                 <span className="post-feedback-label">Спасибо, учтём замечание</span>
+                                <button className="text-btn" onClick={() => textareaRef.current?.focus()}>Уточнить вопрос</button>
                               </div>
                             ) : null}
                           </div>

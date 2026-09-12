@@ -99,7 +99,7 @@ cookie — no token ever touches `localStorage`) to get a new one silently.
 | POST | `/support/requests` | any | Create and process a user request. |
 | GET | `/support/requests` | any | List the current user’s support requests. |
 | GET | `/support/requests/{id}` | owner | Read the owner’s request. |
-| POST | `/support/requests/{id}/messages` | owner | Submit a clarification response. |
+| POST | `/support/requests/{id}/messages` | owner | Submit a follow-up message in the same dialog. |
 | GET | `/support/requests/{id}/messages` | owner | Read the owner’s conversation. |
 | GET | `/operator/tickets` | staff | List tickets; optional `?status=` filter; a line-scoped specialist only sees their line. |
 | GET | `/operator/tickets/{id}` | staff (own line) | Read ticket context. |

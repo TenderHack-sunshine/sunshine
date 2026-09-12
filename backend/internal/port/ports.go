@@ -33,6 +33,7 @@ type Store interface {
 	ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error)
 	ListSupportRequestsByUser(ctx context.Context, userID string) ([]domain.SupportRequest, error)
 	AddMessage(ctx context.Context, message domain.Message) error
+	RefreshTicketContext(ctx context.Context, requestID string) error
 	ListMessages(ctx context.Context, requestID string) ([]domain.Message, error)
 	ApplyRAGResult(ctx context.Context, requestID string, result ProcessResponse, aiMessage *domain.Message, ticket *domain.Ticket) error
 	MarkRAGFailed(ctx context.Context, requestID string) error

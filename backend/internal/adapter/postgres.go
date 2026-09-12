@@ -46,6 +46,19 @@ func (s *PostgresStore) AddMessage(ctx context.Context, message domain.Message) 
 	return err
 }
 
+func (s *PostgresStore) RefreshTicketContext(ctx context.Context, requestID string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE tickets
+		SET conversation_context = COALESCE((
+			SELECT string_agg(sender_type || ': ' || text, chr(10) ORDER BY created_at, id)
+			FROM messages
+			WHERE support_request_id=$1
+		), ''), updated_at=NOW()
+		WHERE support_request_id=$1
+	`, requestID)
+	return err
+}
+
 func (s *PostgresStore) ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT

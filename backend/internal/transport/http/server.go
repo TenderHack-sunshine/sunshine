@@ -250,7 +250,7 @@ func (s *Server) addMessage(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	s.logger.Info("clarification processed", "user_id", actor.UserID, "support_request_id", request.ID, "ai_status", request.AIStatus, "ticket_id", ticketID(ticket))
+	s.logger.Info("support follow-up processed", "user_id", actor.UserID, "support_request_id", request.ID, "ai_status", request.AIStatus, "ticket_id", ticketID(ticket))
 	writeJSON(w, http.StatusOK, userResponse(request, ticket))
 }
 
