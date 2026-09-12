@@ -3,7 +3,7 @@ from __future__ import annotations
 from .prompts import EVIDENCE_GENERATION_POLICY, OPERATOR_FALLBACK
 
 
-class EvidenceGenerator:
+class ExtractiveGenerator:
     """Extractive answer mode. It deliberately cannot fabricate an answer."""
 
     evidence_policy = EVIDENCE_GENERATION_POLICY
@@ -11,7 +11,9 @@ class EvidenceGenerator:
     def __init__(self, minimum_score: float = 0.005):
         self.minimum_score = minimum_score
 
-    def answer(self, evidence: list[dict]) -> dict:
+    backend = "extractive"
+
+    def answer(self, evidence: list[dict], *, query: str | None = None) -> dict:
         best = evidence[0] if evidence else None
         score = next((best[key] for key in ("reranker_score", "rrf_score", "score", "raw_score") if best and best.get(key) is not None), 0.0)
         if best is None or float(score) < self.minimum_score:
@@ -25,3 +27,8 @@ class EvidenceGenerator:
                 "source", "source_path", "title", "page", "page_start", "section", "score", "authority", "source_type", "retrieval_method", "chunk_id",
             )}],
         }
+
+
+# Kept as a stable import for scripts and integrations that still explicitly
+# request extractive mode.
+EvidenceGenerator = ExtractiveGenerator

@@ -25,6 +25,16 @@ class Settings:
     dense_query_timeout_seconds: float = float(os.getenv("DENSE_QUERY_TIMEOUT_SECONDS", "12"))
     dense_worker_host: str = os.getenv("DENSE_WORKER_HOST", "127.0.0.1")
     dense_worker_port: int = int(os.getenv("DENSE_WORKER_PORT", "8765"))
+    generator_backend: str = os.getenv("GENERATOR_BACKEND", "extractive").strip().lower()
+    generation_worker_host: str = os.getenv("GENERATION_WORKER_HOST", "127.0.0.1")
+    generation_worker_port: int = int(os.getenv("GENERATION_WORKER_PORT", "8766"))
+    generation_timeout_seconds: float = float(os.getenv("GENERATION_TIMEOUT_SECONDS", "120"))
+    generation_max_new_tokens: int = int(os.getenv("GENERATION_MAX_NEW_TOKENS", "128"))
+    generation_max_seconds: float = float(os.getenv("GENERATION_MAX_SECONDS", "90"))
+    generation_max_context_chars: int = int(os.getenv("GENERATION_MAX_CONTEXT_CHARS", "12000"))
+    generation_max_evidence_chunks: int = int(os.getenv("GENERATION_MAX_EVIDENCE_CHUNKS", "1"))
+    generation_model_name: str = os.getenv("GENERATION_MODEL_NAME", "Qwen2.5-1.5B-Instruct")
+    allow_extractive_generation_fallback: bool = os.getenv("ALLOW_EXTRACTIVE_GENERATION_FALLBACK", "0").lower() in {"1", "true", "yes"}
     official_expected_points: int = int(os.getenv("OFFICIAL_EXPECTED_POINTS", "1073"))
     rerank_enabled: bool = os.getenv("RERANKER_ENABLED", os.getenv("RERANK_ENABLED", "0")).lower() in {"1", "true", "yes"}
     hybrid_rerank_top_n: int = int(os.getenv("HYBRID_RERANK_TOP_N", "20"))
@@ -70,6 +80,10 @@ class Settings:
     def __post_init__(self) -> None:
         if self.profanity_backend not in {"rule", "deterministic"}:
             raise ValueError("PROFANITY_BACKEND must be rule or deterministic; ML profanity is retired")
+        if self.generator_backend not in {"extractive", "qwen"}:
+            raise ValueError("GENERATOR_BACKEND must be extractive or qwen")
+        if self.generation_timeout_seconds <= 0 or self.generation_max_new_tokens <= 0 or self.generation_max_seconds <= 0 or self.generation_max_context_chars < 1000 or self.generation_max_evidence_chunks < 1:
+            raise ValueError("Generation timeout/max tokens and context limit must be positive")
         if self.rrf_k <= 0:
             raise ValueError("RRF_K must be a positive integer")
         if self.dense_fusion_weight < 0 or self.bm25_fusion_weight < 0:
@@ -108,3 +122,7 @@ class Settings:
     @property
     def reranker_model_path(self) -> Path:
         return self.model_dir / "qwen3-reranker-0.6b"
+
+    @property
+    def generation_model_path(self) -> Path:
+        return self.model_dir / "qwen2.5-1.5b-instruct"

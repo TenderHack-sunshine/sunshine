@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 from time import perf_counter
 
-from src.generation.generator import EvidenceGenerator
+from src.generation.generator import EvidenceGenerator, ExtractiveGenerator
+from src.generation.grounding import validate_grounding
+from src.generation.qwen import GenerationError, InvalidGeneration
 from src.application.clarification import ClarificationPolicy, ConfidenceSignals
 from src.application.evidence import compact_evidence, tagged_context
 from src.application.evidence_sufficiency import EvidenceSufficiencyChecker
@@ -140,12 +143,42 @@ class RAGService:
         self.reranker = reranker or NoopReranker()
         self.rerank_enabled = rerank_enabled
         self.generator = generator or EvidenceGenerator()
+        self.extractive_fallback = ExtractiveGenerator()
         self.confidence = confidence or ConfidenceEvaluator()
         self.clarification_policy = clarification_policy or ClarificationPolicy()
         self.evidence_sufficiency = evidence_sufficiency or EvidenceSufficiencyChecker()
         self.final_top_k = final_top_k
         self.rerank_top_n = rerank_top_n
         self.evidence_max_per_document = evidence_max_per_document
+
+    def _generation_diagnostics(self, *, invoked: bool = False, **extra) -> dict:
+        value = {"backend": getattr(self.generator, "backend", "extractive"), "invoked": invoked,
+                 "model": getattr(self.generator, "model_name", None), "latency_ms": 0.0,
+                 "fallback_used": False}
+        value.update(extra)
+        return value
+
+    def _call_generator(self, query: str, candidates: list[dict]) -> dict:
+        """Accept legacy extractive test adapters while Qwen gets the query."""
+        parameters = inspect.signature(self.generator.answer).parameters
+        if "query" in parameters:
+            return self.generator.answer(candidates, query=query)
+        return self.generator.answer(candidates)
+
+    @staticmethod
+    def _fallback_evidence(query: str, candidates: list[dict]) -> list[dict]:
+        """Choose a query-aligned chunk from already approved evidence only."""
+        terms = [token.casefold()[:5] for token in query.split() if len(token) >= 5]
+        def score(item: dict) -> int:
+            haystack = (str(item.get("title", "")) + " " + str(item.get("text", ""))).casefold()
+            return sum(term in haystack for term in terms)
+        return sorted(candidates, key=score, reverse=True)
+
+    @staticmethod
+    def _valid_final_answer(answer: str) -> bool:
+        normalized = " ".join(answer.casefold().strip(" .,!?:;—-").split())
+        refusals = ("недостаточно данных", "недостаточно информации", "нет информации", "не могу ответить", "не знаю")
+        return len(normalized) >= 3 and not any(phrase in normalized for phrase in refusals)
 
     def ask(self, query: str) -> dict:
         started = perf_counter()
@@ -156,6 +189,7 @@ class RAGService:
                     "diagnostics": {"profanity_backend": prepared["moderation"]["backend"], "profanity_detected": True, "profanity_probability": prepared["moderation"]["probability"], "profanity_threshold": prepared["moderation"]["threshold"], "profanity_latency_ms": prepared["moderation"]["latency_ms"], "dense_available": False, "fallback_used": False, "retrieval_mode": "NONE", "dense_candidates": 0, "bm25_candidates": 0, "retrieved_count": 0, "reranker_used": False,
                                     "retrieval_strategy": "NONE", "dense_primary_used": False, "bm25_rescue_used": False, "bm25_fallback_used": False,
                                     "clarification_policy_triggered": False, "clarification_reason": "NONE",
+                                    "generation": self._generation_diagnostics(),
                                     "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         normalized = prepared["normalized_query"]
         assert normalized is not None
@@ -164,6 +198,7 @@ class RAGService:
                     "diagnostics": {"profanity_backend": prepared["moderation"]["backend"], "profanity_detected": False, "profanity_probability": prepared["moderation"]["probability"], "profanity_threshold": prepared["moderation"]["threshold"], "profanity_latency_ms": prepared["moderation"]["latency_ms"], "dense_available": False, "fallback_used": False, "retrieval_mode": "NONE", "dense_candidates": 0, "bm25_candidates": 0, "retrieved_count": 0, "reranker_used": False,
                                     "retrieval_strategy": "NONE", "dense_primary_used": False, "bm25_rescue_used": False, "bm25_fallback_used": False,
                                     "clarification_policy_triggered": False, "clarification_reason": "NONE",
+                                    "generation": self._generation_diagnostics(),
                                     "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         route = self.router.classify(normalized)
         clarification = self.clarification_policy.evaluate(
@@ -174,6 +209,7 @@ class RAGService:
                     "diagnostics": {"profanity_backend": prepared["moderation"]["backend"], "profanity_detected": False, "profanity_probability": prepared["moderation"]["probability"], "profanity_threshold": prepared["moderation"]["threshold"], "profanity_latency_ms": prepared["moderation"]["latency_ms"], "dense_available": False, "fallback_used": False, "retrieval_mode": "NONE", "dense_candidates": 0, "bm25_candidates": 0, "retrieved_count": 0, "reranker_used": False,
                                     "retrieval_strategy": "NONE", "dense_primary_used": False, "bm25_rescue_used": False, "bm25_fallback_used": False,
                                     "clarification_policy_triggered": True, "clarification_reason": clarification.reason,
+                                    "generation": self._generation_diagnostics(),
                                     "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         trace = self.retriever.retrieve_with_trace(normalized, technical=route["technical"])
         candidates = trace["results"]
@@ -195,7 +231,40 @@ class RAGService:
         if status == "ANSWER" and not sufficiency.sufficient:
             status, reason = "ESCALATE_TO_OPERATOR", f"evidence_insufficient:{sufficiency.reason}"
         generation_started = perf_counter()
-        generated = self.generator.answer(candidates) if status == "ANSWER" else {"answer": OPERATOR_MESSAGE, "used_evidence": False}
+        generation = self._generation_diagnostics()
+        generated = {"answer": OPERATOR_MESSAGE, "used_evidence": False}
+        grounding = {"grounded": None, "reason": "not_invoked"}
+        if status == "ANSWER":
+            try:
+                # Generators receive the unmodified user wording; retrieval still
+                # operates on ``normalized`` as before.
+                generated = self._call_generator(query, candidates)
+                generation = self._generation_diagnostics()
+                generation.update({"invoked": True, **generated.get("generation", {})})
+                grounded = validate_grounding(generated.get("answer", ""), candidates)
+                grounding = {"grounded": grounded.grounded, "reason": grounded.reason}
+                if not grounded.grounded:
+                    status, reason = "ESCALATE_TO_OPERATOR", "GENERATION_NOT_GROUNDED"
+                    generated = {"answer": OPERATOR_MESSAGE, "used_evidence": False}
+            except InvalidGeneration as error:
+                fallback = self.extractive_fallback.answer(self._fallback_evidence(query, candidates), query=query)
+                grounded = validate_grounding(fallback.get("answer", ""), candidates)
+                grounding = {"grounded": grounded.grounded, "reason": grounded.reason}
+                generation = self._generation_diagnostics()
+                generation.update(error.generation)
+                generation.update({"invoked": True, "fallback_used": True, "invalid_generation_reason": error.reason,
+                                   "raw_output": error.raw_output})
+                if fallback.get("used_evidence") and grounded.grounded and sufficiency.sufficient:
+                    generated = fallback
+                else:
+                    status, reason = "ESCALATE_TO_OPERATOR", "GENERATION_NOT_GROUNDED"
+                    generated = {"answer": OPERATOR_MESSAGE, "used_evidence": False}
+            except GenerationError as error:
+                status, reason = "ESCALATE_TO_OPERATOR", "GENERATION_UNAVAILABLE"
+                generation = self._generation_diagnostics(invoked=True, error=str(error))
+        if status == "ANSWER" and (not sufficiency.sufficient or not grounding.get("grounded") or not self._valid_final_answer(generated.get("answer", ""))):
+            status, reason = "ESCALATE_TO_OPERATOR", "GENERATION_NOT_GROUNDED"
+            generated = {"answer": OPERATOR_MESSAGE, "used_evidence": False}
         sources = [{key: item.get(key) for key in ("chunk_id", "document_id", "source_type", "authority", "source_path", "title", "section", "page_start", "page_end", "retrieval_method", "raw_score", "rrf_score", "metadata")} for item in candidates]
         timings = dict(trace.get("timing", {}))
         timings["generation_ms"] = (perf_counter() - generation_started) * 1000
@@ -219,5 +288,6 @@ class RAGService:
                                 "evidence_sufficiency": {"enabled": self.evidence_sufficiency.enabled, "sufficient": sufficiency.sufficient,
                                                          "reason": sufficiency.reason, "required_terms": list(sufficiency.required_terms),
                                                          "missing_terms": list(sufficiency.missing_terms)},
+                                "generation": generation, "grounding": grounding,
                                 "context": tagged_context(candidates),
                                 "timings_ms": timings}}

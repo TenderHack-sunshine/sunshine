@@ -6,6 +6,19 @@ services:
     environment:
       DATA_DIR: /app/data
       EVIDENCE_SUFFICIENCY_ENABLED: "1"
+      # Qdrant and the persistent embedding worker run locally on the demo host.
+      # Docker Desktop exposes them through this stable, explicit hostname.
+      QDRANT_HOST: host.docker.internal
+      DENSE_WORKER_HOST: host.docker.internal
+      # Qwen2.5-1.5B-Instruct generation stays in a separate persistent host worker because
+      # this lightweight RAG image intentionally contains no model weights.
+      GENERATOR_BACKEND: qwen
+      GENERATION_WORKER_HOST: host.docker.internal
+      GENERATION_WORKER_PORT: "8766"
+      GENERATION_MODEL_NAME: Qwen2.5-1.5B-Instruct
+      ALLOW_EXTRACTIVE_GENERATION_FALLBACK: "0"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./rag/data:/app/data:ro
     expose:

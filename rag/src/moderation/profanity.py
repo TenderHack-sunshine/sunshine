@@ -36,6 +36,24 @@ _RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
 )
 
 
+# Prefix-aware forms are deliberately constrained to complete obscene roots.
+# This preserves precision for innocent words such as ``похудеть``.
+_PREFIX_RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    ("root", "\u0445\u0443\u0439", re.compile(
+        r"(?<![\u0430-\u044f\u0451])(?:\u043d\u0430|\u043f\u043e|\u043d\u0438)\u0445\u0443(?:\u0439|\u044f)[\u0430-\u044f\u0451]*(?![\u0430-\u044f\u0451])", re.IGNORECASE,
+    )),
+    ("obfuscated", "\u0445\u0443\u0439", re.compile(
+        r"(?<![\u0430-\u044f\u0451])(?:\u043d\u0430|\u043f\u043e|\u043d\u0438)(?:\u0445|[*#])" + _SEPARATOR + r"\u0443" + _SEPARATOR + r"[\u0439\u0438](?:\u043d\u044f|\u043b\u043e|[\u0430\u044f\u0435\u0438\u0443\u044b])?(?![\u0430-\u044f\u0451])", re.IGNORECASE,
+    )),
+    ("root", "\u043e\u0445\u0443\u0435", re.compile(
+        r"(?<![\u0430-\u044f\u0451])\u043e\u0445\u0443(?:\u0435|\u0451)(?:\u0442\u044c|\u043d[\u0430-\u044f\u0451]*)?(?![\u0430-\u044f\u0451])", re.IGNORECASE,
+    )),
+    ("root", "\u0435\u0431", re.compile(
+        r"(?<![\u0430-\u044f\u0451])(?:\u0434\u043e|\u043f\u0440\u043e|\u043d\u0430|\u0443|\u0434\u043e\u043b\u0431\u043e)(?:\u0435|\u0451)\u0431[\u0430-\u044f\u0451]*(?![\u0430-\u044f\u0451])", re.IGNORECASE,
+    )),
+)
+
+
 def matching_representations(text: str) -> tuple[str, str]:
     """Return readable-normalized and separator-compacted representations."""
     normalized = unicodedata.normalize("NFKC", text).casefold().translate(_HOMOGLYPHS).replace("ё", "е")
@@ -52,7 +70,7 @@ def normalize_for_profanity(text: str) -> str:
 def detect_profanity(text: str) -> dict[str, object]:
     """Return deterministic match details without probabilistic semantics."""
     readable, compact = matching_representations(text)
-    for match_type, canonical, pattern in _RULES:
+    for match_type, canonical, pattern in _RULES + _PREFIX_RULES:
         match = pattern.search(readable) or pattern.search(compact)
         if match:
             return {"contains_profanity": True, "matches": [canonical], "match_type": match_type,

@@ -38,6 +38,23 @@ def test_ambiguity_policy_clarifies_underspecified_lifecycle_action():
     assert result.reason == "UNDERSPECIFIED_LIFECYCLE_ACTION"
 
 
+@pytest.mark.parametrize(
+    ("query", "reason"),
+    [
+        ("\u043a\u0430\u043a \u044d\u0442\u043e \u0438\u0441\u043f\u0440\u0430\u0432\u0438\u0442\u044c", "UNRESOLVED_REFERENCE"),
+        ("\u0433\u0434\u0435 \u044d\u0442\u043e \u043f\u043e\u0434\u043f\u0438\u0441\u0430\u0442\u044c", "UNRESOLVED_REFERENCE"),
+        ("\u0447\u0442\u043e \u0434\u0435\u043b\u0430\u0442\u044c \u0441 \u041c\u0427\u0414", "UNDERSPECIFIED_ACTION_REQUEST"),
+        ("\u043e\u0448\u0438\u0431\u043a\u0430 \u043f\u0440\u0438 \u0437\u0430\u0433\u0440\u0437\u043a\u0435 XML", "AMBIGUOUS_XML_WORKFLOW"),
+        ("\u043c\u043e\u0436\u043d\u043e \u043b\u0438 \u043e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0443\u0436\u0435 \u043f\u043e\u0434\u043f\u0438\u0441\u0430\u043d\u043d\u043e\u0435", "UNDERSPECIFIED_LIFECYCLE_OBJECT"),
+        ("\u043d\u0435 \u043c\u043e\u0433\u0443 \u043f\u043e\u0434\u043f\u0438\u0441\u0430\u0442\u044c \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442 \u0447\u0442\u043e \u0434\u0435\u043b\u0430\u0442\u044c", "UNDERSPECIFIED_FAILURE_CONTEXT"),
+    ],
+)
+def test_ambiguity_policy_clarifies_general_underspecified_requests(query, reason):
+    decision = ClarificationPolicy().evaluate(query, "L1")
+    assert decision.triggered is True
+    assert decision.reason == reason
+
+
 class Retriever:
     def __init__(self, candidates):
         self.candidates = candidates

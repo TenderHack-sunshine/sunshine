@@ -16,12 +16,13 @@ from src.core.config import Settings
 
 class Handler(BaseHTTPRequestHandler):
     service: RAGAPI
+    runtime_diagnostics: dict[str, object] = {}
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path != "/health":
             self._write(HTTPStatus.NOT_FOUND, {"error": "route not found"})
             return
-        self._write(HTTPStatus.OK, {"status": "ok"})
+        self._write(HTTPStatus.OK, {"status": "ok", "runtime": self.runtime_diagnostics})
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/process":
@@ -58,7 +59,21 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=int(os.getenv("RAG_PORT", "8000")))
     args = parser.parse_args()
     try:
-        Handler.service = RAGAPI.from_settings(Settings())
+        settings = Settings()
+        Handler.service = RAGAPI.from_settings(settings)
+        rag_service = Handler.service.service
+        retriever = rag_service.retriever
+        Handler.runtime_diagnostics = {
+            "service": "rag",
+            "evidence_sufficiency_enabled": settings.evidence_sufficiency_enabled,
+            "clarification_policy_enabled": settings.clarification_policy_enabled,
+            "profanity_backend": getattr(rag_service.preprocessor.detector, "backend", "unknown"),
+            "bm25_loaded": bool(getattr(retriever, "official", None) and getattr(retriever, "tickets", None)),
+            "dense_configured": getattr(retriever, "official_dense", None) is not None,
+            "generator_available": rag_service.generator is not None,
+            "generator_backend": getattr(rag_service.generator, "backend", "extractive"),
+            "generator_model": getattr(rag_service.generator, "model_name", None),
+        }
     except ServiceNotReadyError as error:
         raise SystemExit(str(error)) from error
     server = ThreadingHTTPServer((args.host, args.port), Handler)

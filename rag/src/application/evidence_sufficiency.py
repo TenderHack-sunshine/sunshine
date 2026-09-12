@@ -27,6 +27,7 @@ _NUMBER_WORDS = {"один", "одна", "два", "две", "три", "трех
 _CONTACT_TERMS = {"контакт", "телефон", "почт", "связ", "обращен", "поддержк"}
 _CONSEQUENCE_TERMS = {"последств", "ответственност"}
 _CONTACT_QUERY_STOP = {"как", "связ", "моим", "персональн", "портал", "поставщик"}
+_WHY_QUERY_STOP = {"\u043f\u043e\u0447\u0435\u043c", "\u043f\u043e\u0440\u0442\u0430\u043b", "\u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442"}
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,14 @@ def _has_explicit_number(text: str, fact_terms: set[str]) -> bool:
     return False
 
 
+def _supported_terms(query_terms: set[str], evidence_terms: set[str]) -> set[str]:
+    """Match the small stems conservatively without pretending to lemmatise."""
+    return {
+        query_term for query_term in query_terms
+        if any(query_term.startswith(evidence_term) or evidence_term.startswith(query_term) for evidence_term in evidence_terms)
+    }
+
+
 class EvidenceSufficiencyChecker:
     """Reject only clearly unsupported navigation / specific-fact requests."""
 
@@ -111,6 +120,18 @@ class EvidenceSufficiencyChecker:
         )
         if asks_about_consequences and not has_consequence_evidence:
             return EvidenceSufficiencyResult(False, "CONSEQUENCE_NOT_EXPLICIT")
+        if any(term.startswith("\u043f\u043e\u0447\u0435\u043c") for term in query_tokens):
+            causal_subject = {
+                term for term in query_tokens if len(term) >= 5 and term not in _WHY_QUERY_STOP
+            }
+            supported = _supported_terms(causal_subject, evidence_terms)
+            # A causal answer needs more than one generic topical overlap when
+            # the query names several subject terms.  This rejects a semantically
+            # adjacent article from being presented as an explanation.
+            minimum_supported = min(2, len(causal_subject))
+            if len(supported) < minimum_supported:
+                missing = tuple(sorted(causal_subject - supported))
+                return EvidenceSufficiencyResult(False, "REQUESTED_FACT_NOT_EXPLICIT", tuple(sorted(causal_subject)), missing)
         exact_terms = query_tokens & _EXACT_FACT_TERMS
         numeric_question = bool(exact_terms) or "\u0441\u043a\u043e\u043b\u044c\u043a\u043e" in query_tokens or ("\u0441\u0440\u043e\u043a" in query_tokens and "\u043c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d" in query_tokens)
         if exact_terms or numeric_question:

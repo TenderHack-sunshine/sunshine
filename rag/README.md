@@ -106,7 +106,9 @@ Canonical preparation валидирует отсутствие пустого �
   -> weighted Reciprocal Rank Fusion
   -> optional reranker hook
   -> document diversity для tickets
-  -> confidence decision: answer / clarification / operator
+  -> confidence + evidence sufficiency: answer / clarification / operator
+  -> [ANSWER only] separate local Qwen2.5-1.5B-Instruct worker
+  -> post-generation grounding guard
 ```
 
 Для текущего Intel Iris Xe ноутбука full-corpus Qwen3 embedding не запускается: CPU inference 26k tickets занимает непрактичное время. Вместо этого:
@@ -126,7 +128,7 @@ RRF объединяет ранги, а не сравнивает raw BM25 score
 - `src/application/` — стабильные contracts, RAGService, clarification, routing и confidence decision.
 - `src/retrieval/vector_store.py` — REST-only Qdrant adapter, безопасный рядом с Torch на Windows.
 - `src/retrieval/embeddings/qwen3.py` — сохранённый локальный Qwen3 embedding component.
-- `src/moderation/`, `src/routing/`, `src/generation/` — раннее отклонение profanity, нормализация, routing, extractive fallback.
+- `src/moderation/`, `src/routing/`, `src/generation/` — раннее отклонение profanity, нормализация, routing и отдельный local Qwen generation adapter.
 - `data/raw/`, `data/processed/`, `data/indexes/`, `models/` — локальные данные, generated artifacts и веса; они не коммитятся.
 
 ## Установка
@@ -223,7 +225,23 @@ Reranking is optional. `RERANKER_ENABLED=0` is the safe default (`RERANK_ENABLED
 - full dense embedding historical tickets на CPU;
 - изменения ingestion/parsing pipeline.
 
-Текущий generator — extractive: он показывает лучший источник. При отсутствии достаточного evidence отдаёт операторский fallback; profanity отклоняется до retrieval.
+### Local answer synthesis
+
+`GENERATOR_BACKEND=qwen` uses a separate persistent `Qwen2.5-1.5B-Instruct` CPU worker. It is not the Qwen embedding worker and does not change Dense/BM25/Qdrant retrieval. The 1.5B model is the smallest tested local option that follows the Russian grounded prompt; the smaller 0.5B checkpoint was rejected because it failed a direct Russian fact smoke test. The model is provisioned once before the demo, never fetched at runtime.
+
+```powershell
+# One-time preparation (requires network only now, not during the demo).
+python scripts/download_generation_model.py
+
+# Separate terminal on the host; loaded once and reused by all RAG requests.
+python -u scripts/generation_worker.py
+
+# Docker reaches it through host.docker.internal. The compose demo profile sets
+# GENERATOR_BACKEND=qwen and ALLOW_EXTRACTIVE_GENERATION_FALLBACK=0.
+python scripts/check_demo_health.py
+```
+
+Generation is called only after profanity, clarification, retrieval, confidence and evidence-sufficiency gates return `ANSWER`. A worker failure, timeout, empty output, or failed post-generation grounding returns `ESCALATE_TO_OPERATOR`; extractive fallback is opt-in and disabled by default. Internal diagnostics expose backend, invocation, logical model name, latency, grounding result, and fallback usage without exposing a filesystem path.
 
 ## Тесты
 

@@ -6,6 +6,8 @@ from src.application.clarification import ClarificationPolicy
 from src.application.evidence_sufficiency import EvidenceSufficiencyChecker
 from src.application.pipeline import ConfidenceEvaluator, QueryPreprocessor, RAGService
 from src.core.config import Settings
+from src.generation.generator import ExtractiveGenerator
+from src.generation.qwen import QwenGenerator, QwenGenerationClient
 from src.retrieval.embeddings.persistent_worker import PersistentQwenEmbeddingClient
 from src.retrieval.mvp import load_two_path_retriever
 from src.retrieval.official_dense import OfficialDenseRetriever
@@ -50,9 +52,22 @@ def build_rag_service(settings: Settings | None = None, *, canonical_path: str |
     clarification_policy = ClarificationPolicy(enabled=settings.clarification_policy_enabled,
                                                short_failure_max_tokens=settings.clarification_short_failure_max_tokens,
                                                broad_policy_max_tokens=settings.clarification_broad_policy_max_tokens)
+    if settings.generator_backend == "qwen":
+        generator = QwenGenerator(
+            QwenGenerationClient(settings.generation_worker_host, settings.generation_worker_port,
+                                 settings.generation_timeout_seconds),
+            model_name=settings.generation_model_name,
+            max_new_tokens=settings.generation_max_new_tokens,
+            max_seconds=settings.generation_max_seconds,
+            max_context_chars=settings.generation_max_context_chars,
+            max_evidence_chunks=settings.generation_max_evidence_chunks,
+            allow_extractive_fallback=settings.allow_extractive_generation_fallback,
+        )
+    else:
+        generator = ExtractiveGenerator(settings.min_evidence_score)
     return RAGService(retriever, preprocessor=QueryPreprocessor(profanity_detector), clarification_policy=clarification_policy,
                       reranker=reranker, rerank_enabled=settings.rerank_enabled,
                       confidence=ConfidenceEvaluator(settings.confidence_min_sources, settings.confidence_min_official_score,
                                                      settings.confidence_min_agreement), final_top_k=settings.final_top_k,
                       rerank_top_n=settings.hybrid_rerank_top_n, evidence_max_per_document=settings.evidence_max_per_document,
-                      evidence_sufficiency=EvidenceSufficiencyChecker(enabled=settings.evidence_sufficiency_enabled))
+                      evidence_sufficiency=EvidenceSufficiencyChecker(enabled=settings.evidence_sufficiency_enabled), generator=generator)
