@@ -15,6 +15,7 @@ __pycache__/
 .coverage
 coverage.xml
 htmlcov/
+node_modules/
 
 # Build and packaging artifacts
 build/
