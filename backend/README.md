@@ -97,6 +97,7 @@ cookie — no token ever touches `localStorage`) to get a new one silently.
 | Method | Endpoint | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/support/requests` | any | Create and process a user request. |
+| GET | `/support/requests` | any | List the current user’s support requests. |
 | GET | `/support/requests/{id}` | owner | Read the owner’s request. |
 | POST | `/support/requests/{id}/messages` | owner | Submit a clarification response. |
 | GET | `/support/requests/{id}/messages` | owner | Read the owner’s conversation. |

@@ -61,3 +61,4 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE INDEX IF NOT EXISTS idx_messages_request_created ON messages (support_request_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_support_requests_topic ON support_requests (topic);
+CREATE INDEX IF NOT EXISTS idx_support_requests_user_created ON support_requests (user_id, created_at DESC);

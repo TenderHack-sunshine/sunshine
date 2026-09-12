@@ -31,6 +31,7 @@ type Store interface {
 	CreateSupportRequest(ctx context.Context, request domain.SupportRequest, initialMessage domain.Message) error
 	GetSupportRequest(ctx context.Context, requestID string) (domain.SupportRequest, error)
 	ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error)
+	ListSupportRequestsByUser(ctx context.Context, userID string) ([]domain.SupportRequest, error)
 	AddMessage(ctx context.Context, message domain.Message) error
 	ListMessages(ctx context.Context, requestID string) ([]domain.Message, error)
 	ApplyRAGResult(ctx context.Context, requestID string, result ProcessResponse, aiMessage *domain.Message, ticket *domain.Ticket) error

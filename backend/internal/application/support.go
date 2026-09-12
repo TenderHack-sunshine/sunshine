@@ -76,6 +76,13 @@ func (s *SupportService) Get(ctx context.Context, actor Actor, requestID string)
 	return s.ownedRequest(ctx, actor, requestID)
 }
 
+func (s *SupportService) List(ctx context.Context, actor Actor) ([]domain.SupportRequest, error) {
+	if strings.TrimSpace(actor.UserID) == "" {
+		return nil, ErrInvalidInput
+	}
+	return s.store.ListSupportRequestsByUser(ctx, actor.UserID)
+}
+
 func (s *SupportService) ListMessages(ctx context.Context, actor Actor, requestID string) ([]domain.Message, error) {
 	if _, err := s.ownedRequest(ctx, actor, requestID); err != nil {
 		return nil, err

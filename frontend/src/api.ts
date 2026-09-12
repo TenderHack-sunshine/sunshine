@@ -10,7 +10,9 @@
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080").replace(/\/+$/, "");
 
-const PORTAL_USER_ID_KEY = "sunshine.portal_user_id";
+// Keep the same browser identity as api/client.ts so all support endpoints
+// address one persistent anonymous user.
+const PORTAL_USER_ID_KEY = "sunshine.anonymous_user_id";
 
 /**
  * The real Portal has no auth gateway wired into this hackathon build, so the
@@ -22,7 +24,7 @@ export function getPortalUserId(): string {
   try {
     const existing = window.localStorage.getItem(PORTAL_USER_ID_KEY);
     if (existing) return existing;
-    const generated = `user-${crypto.randomUUID()}`;
+    const generated = crypto.randomUUID();
     window.localStorage.setItem(PORTAL_USER_ID_KEY, generated);
     return generated;
   } catch {
@@ -102,6 +104,20 @@ export type SupportResponse = {
   ticket_status?: string;
 };
 
+export type ApiSupportRequest = {
+  id: string;
+  original_message: string;
+  status: RequestStatus;
+  topic?: string;
+  support_level?: string;
+  ai_status: string;
+  ai_answer?: string;
+  confidence?: number;
+  sources?: ApiSource[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type ApiMessage = {
   id: string;
   support_request_id: string;
@@ -156,6 +172,10 @@ export type AnalyticsConclusion = {
 
 export function createSupportRequest(message: string): Promise<SupportResponse> {
   return request("/support/requests", { method: "POST", body: JSON.stringify({ message }) });
+}
+
+export function listSupportRequests(): Promise<{ requests: ApiSupportRequest[] }> {
+  return request("/support/requests");
 }
 
 export function addSupportMessage(requestId: string, message: string): Promise<SupportResponse> {

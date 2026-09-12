@@ -249,10 +249,19 @@ body {
 }
  
 .btn-new:hover { background: #b92734; }
- 
+.btn-new:disabled { opacity: .6; cursor: not-allowed; }
+
 .history-list {
   flex: 1;
   overflow-y: auto;
+}
+
+.history-empty {
+  padding: 24px 16px;
+  color: #8a94a6;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
 }
  
 .history-item {

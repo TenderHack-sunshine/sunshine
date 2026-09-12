@@ -2,22 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import AdminPanel from "./AdminPanel";
 import portalLogo from "@/imports/image-1.png";
 import { apiPost } from "./api/client";
-import type { ApiSource, SupportResponse } from "./api";
+import { apiGet } from "./api/client";
+import type { ApiMessage, ApiSource, ApiSupportRequest, RequestStatus, SupportResponse } from "./api";
 
 type ChatState = "idle" | "processing" | "needs_clarification" | "answered" | "insufficient_knowledge" | "escalated";
 
 type Source = { title: string; section: string; page?: string };
-
-type RouteStep = { label: string; status: "done" | "skipped" | "escalated" };
-
-type RouteInfo = {
-  type: string;
-  topic: string;
-  direction: string;
-  directionLevel: string;
-  result: string;
-  steps: RouteStep[];
-};
 
 type Message = {
   id: number;
@@ -28,117 +18,24 @@ type Message = {
   processingLabel?: string;
   sources?: Source[];
   quickReplies?: string[];
-  isEscalation?: boolean;
   isEscalated?: boolean;
   isClarification?: boolean;
   requestId?: string;
 };
 
-const DEMO_SCENARIOS = {
-  oferta: {
-    clarification: null,
-    routeInfo: {
-      type: "Нетехнический",
-      topic: "Создание оферты",
-      direction: "Базовая поддержка",
-      directionLevel: "l1",
-      result: "Ответ найден",
-      steps: [
-        { label: "Запрос получен", status: "done" },
-        { label: "Контекста достаточно", status: "done" },
-        { label: "Тема: создание оферты", status: "done" },
-        { label: "Базовая поддержка: L1", status: "done" },
-        { label: "Поиск по базе знаний", status: "done" },
-        { label: "Ответ достаточен", status: "done" },
-      ] as RouteStep[],
-    } as RouteInfo,
-    answer: `Оферта — это ценовое предложение поставщика на конкретный товар или услугу. Чтобы создать и опубликовать оферту:\n\n1. Откройте раздел **«Товары и услуги»** в личном кабинете и выберите нужную позицию из каталога или создайте новую.\n2. Перейдите на вкладку **«Оферты»** и нажмите **«Добавить ценовое предложение»**.\n3. Заполните обязательные поля: цена за единицу, ставка НДС, срок поставки, минимальная партия.\n4. При необходимости прикрепите спецификацию или технические условия (СТЕ).\n5. Подпишите оферту действующей электронной подписью и отправьте на публикацию.\n\nПосле проверки модератором оферта появится в каталоге и станет доступна заказчикам.`,
-    sources: [
-      { title: "Инструкция по созданию оферты и СТЕ", section: "Раздел 2. Создание ценового предложения", page: "стр. 6–14" },
-      { title: "Инструкция по работе с Порталом для поставщика", section: "Раздел 4. Товары и каталог", page: "стр. 22" },
-    ] as Source[],
-  },
-  mchd: {
-    clarification: null,
-    routeInfo: {
-      type: "Нетехнический",
-      topic: "Машиночитаемые доверенности",
-      direction: "Базовая поддержка",
-      directionLevel: "l1",
-      result: "Ответ найден",
-      steps: [
-        { label: "Запрос получен", status: "done" },
-        { label: "Контекста достаточно", status: "done" },
-        { label: "Тема: МЧД", status: "done" },
-        { label: "Базовая поддержка: L1", status: "done" },
-        { label: "Поиск по базе знаний", status: "done" },
-        { label: "Ответ достаточен", status: "done" },
-      ] as RouteStep[],
-    } as RouteInfo,
-    answer: `Для работы с машиночитаемой доверенностью (МЧД) выполните следующие действия:\n\n1. Перейдите в личный кабинет и откройте раздел **«Доверенности»**.\n2. Нажмите **«Создать доверенность»** и заполните данные представителя: ФИО, ИНН, перечень полномочий.\n3. Укажите срок действия доверенности.\n4. Подпишите документ действующей электронной подписью руководителя организации.\n5. После сохранения доверенность получит статус **«Активна»** и станет доступна для использования.`,
-    sources: [
-      { title: "Инструкция по работе с машиночитаемыми доверенностями", section: "Раздел 3. Создание и подпись МЧД", page: "стр. 12–18" },
-      { title: "Инструкция по работе с Порталом для поставщика", section: "Раздел 7. Доверенности", page: "стр. 44" },
-    ] as Source[],
-  },
-  ep: {
-    clarification: "Уточните, пожалуйста: на каком этапе возникает проблема? Появляется ли сообщение об ошибке?",
-    clarificationReplies: ["Кнопка не реагирует", "Появляется ошибка", "Не отображается сертификат"],
-    routeInfo: {
-      type: "Технический",
-      topic: "Электронная подпись",
-      direction: "Техническая поддержка",
-      directionLevel: "l3",
-      result: "Ответ найден",
-      steps: [
-        { label: "Запрос получен", status: "done" },
-        { label: "Тип: технический", status: "done" },
-        { label: "L1, L2 — не требуются", status: "skipped" },
-        { label: "Техническая поддержка: L3", status: "done" },
-        { label: "Поиск по базе знаний", status: "done" },
-        { label: "Ответ достаточен", status: "done" },
-      ] as RouteStep[],
-    } as RouteInfo,
-    answer: `Проблема с электронной подписью чаще всего вызвана одной из следующих причин:\n\n1. **Истёк срок сертификата** — проверьте дату действия ЭП в хранилище сертификатов.\n2. **Не установлен или устарел КриптоПро CSP** — требуется версия 5.0 и выше.\n3. **Браузер не поддерживает плагин** — используйте Яндекс Браузер с установленным расширением.\n4. **Сертификат не привязан к профилю** — перейдите в настройки профиля и добавьте сертификат вручную.\n\nЕсли после выполнения этих шагов проблема сохраняется, обратитесь в техническую поддержку.`,
-    sources: [
-      { title: "Инструкция по настройке рабочего места", section: "Раздел 2. Электронная подпись", page: "стр. 8–15" },
-      { title: "Инструкция по работе с Порталом для поставщика", section: "Раздел 1. Требования к рабочему месту", page: "стр. 4" },
-    ] as Source[],
-  },
-  file: {
-    clarification: "Уточните, пожалуйста: что именно происходит при загрузке? Появляется ли сообщение об ошибке?",
-    clarificationReplies: ["Ошибка формата файла", "Загрузка зависает", "Превышен допустимый размер"],
-    routeInfo: {
-      type: "Технический",
-      topic: "Загрузка файлов",
-      direction: "Техническая поддержка",
-      directionLevel: "l3",
-      result: "Недостаточно подтверждённой информации — передача специалисту",
-      steps: [
-        { label: "Запрос получен", status: "done" },
-        { label: "Уточнение получено", status: "done" },
-        { label: "Тип: технический", status: "done" },
-        { label: "L1, L2 — не требуются", status: "skipped" },
-        { label: "Техническая поддержка: L3", status: "done" },
-        { label: "Ответа в базе недостаточно — передача специалисту", status: "escalated" },
-      ] as RouteStep[],
-    } as RouteInfo,
-    answer: null,
-    escalation: true,
-  },
-} as const;
+type HistoryStatus = "active" | "done" | "escalated" | "info";
 
-type ScenarioKey = keyof typeof DEMO_SCENARIOS;
+type HistoryItem = {
+  id: string;
+  title: string;
+  preview: string;
+  date: string;
+  status: HistoryStatus;
+  request: ApiSupportRequest;
+};
 
-const HISTORY_ITEMS = [
-  { id: 1, title: "Создание оферты", preview: "Как создать и опубликовать оферту?", date: "сегодня", status: "active" as const, scenario: "oferta" as ScenarioKey },
-  { id: 2, title: "Работа с МЧД", preview: "Как создать машиночитаемую доверенность?", date: "вчера", status: "done" as const, scenario: "mchd" as ScenarioKey },
-  { id: 3, title: "Ошибка при загрузке", preview: "Ошибка при загрузке файла документа", date: "23 мая", status: "escalated" as const, scenario: "file" as ScenarioKey },
-  { id: 4, title: "Статус закупки", preview: "Как отследить статус закупки?", date: "21 мая", status: "done" as const, scenario: "mchd" as ScenarioKey },
-];
-
-const STATUS_LABELS = { active: "В работе", done: "Завершено", escalated: "Специалисту", info: "Уточнение" };
-const STATUS_CLASSES = { active: "status-active", done: "status-done", escalated: "status-escalated", info: "status-info" };
+const STATUS_LABELS: Record<HistoryStatus, string> = { active: "В работе", done: "Завершено", escalated: "Специалисту", info: "Уточнение" };
+const STATUS_CLASSES: Record<HistoryStatus, string> = { active: "status-active", done: "status-done", escalated: "status-escalated", info: "status-info" };
 
 const PROC_STAGES = ["Помощник проверяет материалы Портала…", "Определяю тему обращения", "Проверяю официальные материалы", "Формирую ответ"];
 
@@ -177,8 +74,6 @@ function renderText(text: string) {
   return <div className="msg-reply-text">{out}</div>;
 }
 
-function delay(ms: number) { return new Promise(r => setTimeout(r, ms)); }
-
 function toSources(sources: ApiSource[] = []): Source[] {
   return sources.map((source) => ({
     title: source.document,
@@ -187,16 +82,77 @@ function toSources(sources: ApiSource[] = []): Source[] {
   }));
 }
 
+function historyStatus(status: RequestStatus): HistoryStatus {
+  if (status === "processing" || status === "ai_failed") return "active";
+  if (status === "need_clarification") return "info";
+  if (status === "escalated") return "escalated";
+  return "done";
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (left: Date, right: Date) => left.toDateString() === right.toDateString();
+  if (sameDay(date, today)) return "сегодня";
+  if (sameDay(date, yesterday)) return "вчера";
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+}
+
+function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function historyItem(request: ApiSupportRequest): HistoryItem {
+  const preview = request.original_message.trim();
+  return {
+    id: request.id,
+    title: request.topic?.trim() || (preview.length > 36 ? `${preview.slice(0, 36)}…` : preview),
+    preview: preview.length > 72 ? `${preview.slice(0, 72)}…` : preview,
+    date: formatDate(request.created_at),
+    status: historyStatus(request.status),
+    request,
+  };
+}
+
+function chatStateForRequest(status: RequestStatus): ChatState {
+  if (status === "processing") return "processing";
+  if (status === "need_clarification") return "needs_clarification";
+  if (status === "escalated") return "escalated";
+  if (status === "answered" || status === "blocked") return "answered";
+  return "idle";
+}
+
+function messagesFromApi(messages: ApiMessage[], request: ApiSupportRequest): Message[] {
+  return messages.map((message, index) => {
+    const isAssistant = message.sender_type !== "USER";
+    const isAnswer = isAssistant && (request.status === "answered" || request.status === "blocked") && request.ai_answer === message.text;
+    const sources = isAnswer ? toSources(request.sources) : [];
+    return {
+      id: index + 1,
+      role: isAssistant ? "assistant" : "user",
+      time: formatTime(message.created_at),
+      text: message.text,
+      requestId: request.id,
+      isClarification: isAssistant && request.status === "need_clarification",
+      isEscalated: isAssistant && request.status === "escalated",
+      sources: sources.length ? sources : undefined,
+    };
+  });
+}
+
 export default function App() {
   const [page, setPage] = useState<"support" | "admin">("support");
-  const [selectedHistory, setSelectedHistory] = useState(1);
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [selectedHistory, setSelectedHistory] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatState, setChatState] = useState<ChatState>("idle");
   const [inputText, setInputText] = useState("");
   const [openSources, setOpenSources] = useState<Set<number>>(new Set());
   const [feedbackGiven, setFeedbackGiven] = useState<Record<number, "yes" | "no">>({});
   const [showPostFeedback, setShowPostFeedback] = useState<Set<number>>(new Set());
-  const [pendingScenario, setPendingScenario] = useState<ScenarioKey | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [chatError, setChatError] = useState("");
   const msgIdRef = useRef(0);
@@ -208,6 +164,22 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  async function loadHistory() {
+    try {
+      setHistoryLoading(true);
+      const response = await apiGet<{ requests: ApiSupportRequest[] }>("/support/requests");
+      setHistoryItems(response.requests.map(historyItem));
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : "Не удалось загрузить историю диалогов.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadHistory();
+  }, []);
+
   function announce(s: string) {
     if (liveRef.current) liveRef.current.textContent = s;
   }
@@ -216,10 +188,6 @@ export default function App() {
     const id = ++msgIdRef.current;
     setMessages(prev => [...prev, { ...m, id, time: nowTime() }]);
     return id;
-  }
-
-  function patchMsg(id: number, patch: Partial<Message>) {
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, ...patch } : m));
   }
 
   function removeMsg(id: number) {
@@ -233,69 +201,45 @@ export default function App() {
     setOpenSources(new Set());
     setFeedbackGiven({});
     setShowPostFeedback(new Set());
-    setPendingScenario(null);
     setActiveRequestId(null);
     setChatError("");
     msgIdRef.current = 0;
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }
 
-  function selectHistory(item: typeof HISTORY_ITEMS[0]) {
-    setSelectedHistory(item.id);
+  function startNewDialog() {
+    if (chatState === "processing") return;
+    setSelectedHistory(null);
     resetChat();
   }
 
-  async function runScenario(key: ScenarioKey, userText: string) {
-    const s = DEMO_SCENARIOS[key];
-    addMsg({ role: "user", text: userText });
-
-    if ((s as any).clarification) {
-      await delay(600);
-      addMsg({
-        role: "assistant",
-        text: (s as any).clarification,
-        isClarification: true,
-        quickReplies: (s as any).clarificationReplies,
-      });
-      setChatState("needs_clarification");
-      setPendingScenario(key);
-      announce("Нужно уточнение");
-    } else {
-      await runProcessing(key);
-    }
-  }
-
-  async function runProcessing(key: ScenarioKey) {
-    const s = DEMO_SCENARIOS[key];
-    const procId = addMsg({ role: "assistant", isProcessing: true, processingLabel: PROC_STAGES[0] });
-    setChatState("processing");
-
-    for (let i = 1; i < PROC_STAGES.length; i++) {
-      await delay(850);
-      patchMsg(procId, { processingLabel: PROC_STAGES[i] });
-      announce(PROC_STAGES[i]);
-    }
-    await delay(600);
-    removeMsg(procId);
-
-    if ((s as any).escalation) {
-      addMsg({ role: "assistant", isEscalation: true });
-      setChatState("insufficient_knowledge");
-    } else {
-      addMsg({
-        role: "assistant",
-        text: (s as any).answer,
-        sources: (s as any).sources,
-      });
-      setChatState("answered");
-      announce("Ответ получен");
+  async function selectHistory(item: HistoryItem) {
+    if (chatState === "processing") return;
+    setSelectedHistory(item.id);
+    setActiveRequestId(item.id);
+    setMessages([]);
+    setOpenSources(new Set());
+    setFeedbackGiven({});
+    setShowPostFeedback(new Set());
+    setChatError("");
+    setChatState(chatStateForRequest(item.request.status));
+    msgIdRef.current = 0;
+    try {
+      const response = await apiGet<{ messages: ApiMessage[] }>(`/support/requests/${encodeURIComponent(item.id)}/messages`);
+      const loaded = messagesFromApi(response.messages, item.request);
+      msgIdRef.current = loaded.length;
+      setMessages(loaded);
+    } catch (error) {
+      setChatState("idle");
+      setChatError(error instanceof Error ? error.message : "Не удалось загрузить диалог.");
     }
   }
 
   function showBackendResponse(response: SupportResponse) {
     const shared = { role: "assistant" as const, requestId: response.request_id };
-    if (response.status === "answered") {
-      addMsg({ ...shared, text: response.answer || "Ответ не найден.", sources: toSources(response.sources) });
+    if (response.status === "answered" || response.status === "blocked") {
+      const sources = toSources(response.sources);
+      addMsg({ ...shared, text: response.answer || "Ответ не найден.", sources: sources.length ? sources : undefined });
       setChatState("answered");
       announce("Ответ получен");
       return;
@@ -307,7 +251,7 @@ export default function App() {
       return;
     }
     if (response.status === "escalated") {
-      addMsg({ ...shared, isEscalated: true });
+      addMsg({ ...shared, text: response.support || "Диалог передан специалисту технической поддержки.", isEscalated: true });
       setChatState("escalated");
       announce("Обращение передано специалисту");
       return;
@@ -317,17 +261,28 @@ export default function App() {
   }
 
   async function submitToBackend(text: string) {
+    const continuationId = activeRequestId && chatState === "needs_clarification" ? activeRequestId : null;
+    if (!continuationId && activeRequestId) {
+      setSelectedHistory(null);
+      setMessages([]);
+      setOpenSources(new Set());
+      setFeedbackGiven({});
+      setShowPostFeedback(new Set());
+      msgIdRef.current = 0;
+    }
     addMsg({ role: "user", text });
     const processingId = addMsg({ role: "assistant", isProcessing: true, processingLabel: PROC_STAGES[0] });
     setChatState("processing");
     setChatError("");
     try {
-      const response = activeRequestId && chatState === "needs_clarification"
-        ? await apiPost<SupportResponse>(`/support/requests/${encodeURIComponent(activeRequestId)}/messages`, { message: text })
+      const response = continuationId
+        ? await apiPost<SupportResponse>(`/support/requests/${encodeURIComponent(continuationId)}/messages`, { message: text })
         : await apiPost<SupportResponse>("/support/requests", { message: text });
       removeMsg(processingId);
+      setSelectedHistory(response.request_id);
       setActiveRequestId(response.request_id);
       showBackendResponse(response);
+      void loadHistory();
     } catch (error) {
       removeMsg(processingId);
       setChatState("idle");
@@ -341,11 +296,6 @@ export default function App() {
 
   async function handleArbitrary(text: string) {
     await submitToBackend(text);
-  }
-
-  function handleEscalate() {
-    addMsg({ role: "assistant", isEscalated: true });
-    setChatState("escalated");
   }
 
   async function handleSend() {
@@ -391,10 +341,10 @@ export default function App() {
   }
 
   const QUICK_Q = [
-    { label: "Как создать оферту?", key: "oferta" as ScenarioKey },
-    { label: "Работа с МЧД", key: "mchd" as ScenarioKey },
-    { label: "Проблема с электронной подписью", key: "ep" as ScenarioKey },
-    { label: "Ошибка при загрузке файла", key: "file" as ScenarioKey },
+    "Как создать оферту?",
+    "Работа с МЧД",
+    "Проблема с электронной подписью",
+    "Ошибка при загрузке файла",
   ];
 
   return (
@@ -423,12 +373,6 @@ export default function App() {
       {page === "admin" && <AdminPanel />}
 
       {page === "support" && <main className="page-content">
-        {/* <nav className="breadcrumbs" aria-label="Навигационная цепочка">
-          <a href="#">Главная</a>
-          <span className="sep" aria-hidden="true">/</span>
-          <span className="current">Поддержка</span>
-        </nav> */}
-
         <div className="page-heading-row">
           <h1 className="page-heading">Поддержка</h1>
           <span className="page-subheading">Задайте вопрос о работе с Порталом</span>
@@ -438,7 +382,7 @@ export default function App() {
           <aside className="history-panel" aria-label="Диалоги">
             <div className="history-panel-header">
               <span className="panel-title">Диалоги</span>
-              <button className="btn-new" onClick={resetChat}>
+              <button className="btn-new" onClick={startNewDialog} disabled={chatState === "processing"}>
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
                   <path d="M5 1v8M1 5h8" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" />
                 </svg>
@@ -446,7 +390,9 @@ export default function App() {
               </button>
             </div>
             <div className="history-list" role="list">
-              {HISTORY_ITEMS.map(item => (
+              {historyLoading && <div className="history-empty">Загрузка диалогов…</div>}
+              {!historyLoading && historyItems.length === 0 && <div className="history-empty">Здесь появятся ваши диалоги</div>}
+              {!historyLoading && historyItems.map(item => (
                 <div
                   key={item.id}
                   className={`history-item${selectedHistory === item.id ? " selected" : ""}`}
@@ -490,9 +436,9 @@ export default function App() {
                       Здравствуйте! Опишите, что вы хотите сделать на Портале или какая ошибка возникла. Если информации будет недостаточно, я задам уточняющий вопрос.
                     </p>
                     <div className="quick-questions">
-                      {QUICK_Q.map(q => (
-                        <button key={q.key} className="quick-btn" onClick={() => void submitToBackend(q.label)}>
-                          {q.label}
+                       {QUICK_Q.map(question => (
+                         <button key={question} className="quick-btn" onClick={() => void submitToBackend(question)}>
+                           {question}
                         </button>
                       ))}
                     </div>
@@ -531,27 +477,6 @@ export default function App() {
                     );
                   }
 
-                  if (msg.isEscalation) {
-                    return (
-                      <div key={msg.id} className="msg-block assistant">
-                        <div className="msg-meta">
-                          <span className="msg-meta-name">Помощник Портала</span>
-                          <span>·</span>
-                          <span>{msg.time}</span>
-                        </div>
-                        <div className="msg-reply">
-                          <div className="escalation-block">
-                            В базе знаний нет подтверждённого решения для описанной ситуации. Чтобы не вводить вас в заблуждение, я могу передать диалог специалисту.
-                          </div>
-                          <div className="escalation-actions">
-                            <button className="btn-primary" onClick={handleEscalate}>Передать специалисту</button>
-                            <button className="btn-secondary-sm">Дополнить описание</button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
                   if (msg.isEscalated) {
                     return (
                       <div key={msg.id} className="msg-block assistant">
@@ -562,16 +487,7 @@ export default function App() {
                         </div>
                         <div className="msg-reply">
                           <div className="escalated-note">
-                            <strong>Диалог передан в техническую поддержку.</strong><br />
-                            Специалист получит историю диалога, ваши уточнения и найденные материалы. Повторно описывать ситуацию не потребуется.
-                          </div>
-                          <div className="escalated-context" style={{ marginTop: 10 }}>
-                            <div className="escalated-context-title">Что получит специалист</div>
-                            <div className="ctx-row"><span className="ctx-key">Тема:</span> Загрузка файлов</div>
-                            <div className="ctx-row"><span className="ctx-key">Тип:</span> Технический</div>
-                            <div className="ctx-row"><span className="ctx-key">Направление:</span> Техническая поддержка: L3</div>
-                            <div className="ctx-row"><span className="ctx-key">Проверено:</span> База знаний — ответа недостаточно</div>
-                            <div className="ctx-row"><span className="ctx-key">История:</span> Вопрос и уточнения пользователя</div>
+                            {msg.text && renderText(msg.text)}
                           </div>
                         </div>
                       </div>
@@ -652,9 +568,7 @@ export default function App() {
                               <span style={{ fontSize: 13, color: "#238636" }}>Спасибо за оценку</span>
                             ) : showPost ? (
                               <div className="post-feedback">
-                                <span className="post-feedback-label">Что сделать дальше?</span>
-                                <button className="text-btn">Уточнить вопрос</button>
-                                <button className="text-btn danger" onClick={handleEscalate}>Передать специалисту</button>
+                                <span className="post-feedback-label">Спасибо, учтём замечание</span>
                               </div>
                             ) : null}
                           </div>

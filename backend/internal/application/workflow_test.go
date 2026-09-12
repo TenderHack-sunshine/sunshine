@@ -48,6 +48,20 @@ func TestSupportFlowAnswerClarificationAndEscalation(t *testing.T) {
 	}
 }
 
+func TestSupportListIsScopedToActor(t *testing.T) {
+	store := newFakeStore()
+	store.requests["request-1"] = domain.SupportRequest{ID: "request-1", UserID: "user-1"}
+	store.requests["request-2"] = domain.SupportRequest{ID: "request-2", UserID: "user-2"}
+
+	requests, err := NewSupportService(store, nil).List(context.Background(), Actor{UserID: "user-1"})
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+	if len(requests) != 1 || requests[0].ID != "request-1" {
+		t.Fatalf("unexpected scoped requests: %+v", requests)
+	}
+}
+
 func TestTicketLifecycleFeedbackAnalyticsAndAIUnavailable(t *testing.T) {
 	store := newFakeStore()
 	confidence := 0.4
@@ -161,6 +175,16 @@ func (s *fakeStore) GetSupportRequest(_ context.Context, id string) (domain.Supp
 
 func (s *fakeStore) ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error) {
 	return nil, nil
+}
+
+func (s *fakeStore) ListSupportRequestsByUser(_ context.Context, userID string) ([]domain.SupportRequest, error) {
+	items := make([]domain.SupportRequest, 0)
+	for _, request := range s.requests {
+		if request.UserID == userID {
+			items = append(items, request)
+		}
+	}
+	return items, nil
 }
 
 func (s *fakeStore) AddMessage(_ context.Context, m domain.Message) error {

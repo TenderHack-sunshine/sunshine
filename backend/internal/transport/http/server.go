@@ -49,6 +49,7 @@ func NewServer(support *application.SupportService, tickets *application.TicketS
 	mux.HandleFunc("GET /auth/me", server.me)
 
 	mux.HandleFunc("POST /support/requests", server.createRequest)
+	mux.HandleFunc("GET /support/requests", server.listRequests)
 	mux.HandleFunc("GET /support/requests/{id}", server.getRequest)
 	mux.HandleFunc("POST /support/requests/{id}/messages", server.addMessage)
 	mux.HandleFunc("GET /support/requests/{id}/messages", server.listMessages)
@@ -193,6 +194,19 @@ func (s *Server) createRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("support request processed", "user_id", actor.UserID, "support_request_id", request.ID, "ai_status", request.AIStatus, "ticket_id", ticketID(ticket))
 	writeJSON(w, http.StatusCreated, userResponse(request, ticket))
+}
+
+func (s *Server) listRequests(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return
+	}
+	requests, err := s.support.List(r.Context(), actor)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": requests})
 }
 
 func (s *Server) analyticsRequests(w http.ResponseWriter, r *http.Request) {

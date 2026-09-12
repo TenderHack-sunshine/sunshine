@@ -84,6 +84,41 @@ func (s *PostgresStore) ListSupportRequests(ctx context.Context) ([]domain.Suppo
 	return items, rows.Err()
 }
 
+func (s *PostgresStore) ListSupportRequestsByUser(ctx context.Context, userID string) ([]domain.SupportRequest, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			id,
+			user_id,
+			original_message,
+			status,
+			topic,
+			support_level,
+			ai_status,
+			ai_answer,
+			confidence,
+			ai_sources,
+			created_at,
+			updated_at
+		FROM support_requests
+		WHERE user_id=$1
+		ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.SupportRequest, 0)
+	for rows.Next() {
+		request, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, request)
+	}
+	return items, rows.Err()
+}
+
 func (s *PostgresStore) ListMessages(ctx context.Context, requestID string) ([]domain.Message, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id,support_request_id,sender_type,text,created_at FROM messages WHERE support_request_id=$1 ORDER BY created_at,id`, requestID)
 	if err != nil {
