@@ -27,6 +27,14 @@ dist/
 !rag/data/raw/tickets/.gitkeep
 rag/data/raw/zakupki_kb/*
 !rag/data/raw/zakupki_kb/.gitkeep
+# Keep the original corpus in Git: it is required to reproduce ingestion.
+# These exceptions must follow the fetched-KB rule above.
+!rag/data/raw/**/*.pdf
+!rag/data/raw/**/*.PDF
+!rag/data/raw/**/*.xlsx
+!rag/data/raw/**/*.XLSX
+!rag/data/raw/**/*.xls
+!rag/data/raw/**/*.XLS
 rag/data/processed/*
 !rag/data/processed/.gitkeep
 rag/data/indexes/*
