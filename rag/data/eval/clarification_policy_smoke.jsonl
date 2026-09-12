@@ -1,0 +1,14 @@
+{"query":"не могу подписать","expected_decision":"CLARIFY","category":"short_failure"}
+{"query":"не работает","expected_decision":"CLARIFY","category":"short_failure"}
+{"query":"не открывается","expected_decision":"CLARIFY","category":"short_failure"}
+{"query":"не могу войти","expected_decision":"CLARIFY","category":"short_failure"}
+{"query":"как добавить МЧД","expected_decision":"ANSWER","category":"short_information"}
+{"query":"где мои оферты","expected_decision":"ANSWER","category":"short_information"}
+{"query":"как удалить оферту","expected_decision":"ANSWER","category":"short_information"}
+{"query":"правила работы с контрактом","expected_decision":"CLARIFY","category":"broad_policy"}
+{"query":"правила работы с офертой","expected_decision":"CLARIFY","category":"broad_policy"}
+{"query":"правила участия","expected_decision":"CLARIFY","category":"broad_policy"}
+{"query":"какие правила действуют при изменении цены контракта","expected_decision":"ANSWER","category":"specific_policy"}
+{"query":"как создать оферту","expected_decision":"ANSWER","category":"normal_l1"}
+{"query":"порядок размещения оферты","expected_decision":"ANSWER","category":"normal_l2"}
+{"query":"не открывается котировочная сессия","expected_decision":"ANSWER","category":"normal_l3"}

@@ -26,6 +26,11 @@ def test_api_maps_existing_evidence_to_backend_contract():
     assert result["sources"] == [{"document_id": "kb:42", "title": "Доверенности", "url": "https://example.test/guide", "page": 4}]
 
 
+def test_generator_accepts_a_dense_candidate_with_raw_score_only():
+    result = EvidenceGenerator().answer([{"text": "Official dense evidence", "raw_score": .7, "authority": "official"}])
+    assert result["used_evidence"] is True
+
+
 def test_api_blocks_profanity_without_retrieval():
     result = RAGAPI(retriever=Retriever([]), generator=EvidenceGenerator()).process({"message": "Это х*йня"})
     assert result["status"] == "blocked"

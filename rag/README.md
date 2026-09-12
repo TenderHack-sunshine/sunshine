@@ -7,8 +7,9 @@ The active MVP uses two independent retrieval paths:
 ```text
 query -> moderation -> normalization -> technical router
       -> Qwen3 + Qdrant (official_kb, official_manual, support_taxonomy only)
-      -> BM25 (support_ticket only, and only for technical requests)
-      -> reciprocal-rank fusion -> ticket document diversity -> extractive evidence
+      -> Dense-primary ranking of official evidence
+      -> BM25 rescue only when dense evidence is weak; BM25 fallback if Dense is unavailable
+      -> ticket document diversity -> extractive evidence
 ```
 
 The official dense collection is named `zakupki_official`. It must contain exactly 1,073 points and never contains `support_ticket` records. Qdrant is optional at runtime: an unavailable collection, Qdrant error, embedding error, or dense-query timeout explicitly selects the lightweight official BM25 fallback; the CLI prints `dense_available=false` and `fallback_used=true`.
@@ -33,7 +34,52 @@ Start-Process python -ArgumentList '-u','scripts/index_official_qdrant.py','--ba
 
 `scripts/ask.py` is the stable end-to-end entry point. It uses `dense_available=false` and `fallback_used=true` until REST Qdrant reports exactly 1,073 official points and the persistent worker is ready; it never attempts dense embedding of the 25,044 historical tickets.
 
-With both the 1,073-point collection and the worker ready, official retrieval is `HYBRID`: official BM25 top 20 plus Qdrant dense top 20, fused with RRF. L3 additionally queries ticket BM25; tickets are never dense-indexed.
+## Demo preflight
+
+Run the demo from `rag/` in this order. The production demo profile is ML
+moderation; it never silently substitutes the rule backend.
+
+```powershell
+# Terminal 1 — start once and keep this process running.
+python -u scripts/embedding_worker.py
+
+# Terminal 2 — validates ML profanity, data, BM25, worker and Qdrant.
+python scripts/check_demo_health.py --profanity-backend ml --load-profanity
+
+# Terminal 3 — use the same ML profile for the CLI or HTTP adapter.
+python scripts/ask.py "как добавить МЧД"
+# python scripts/serve.py --port 8000
+```
+
+Before the presentation, also run the reviewable ML E2E suite:
+
+```powershell
+python scripts/run_e2e_demo_eval.py data/eval/e2e_demo_scenarios.jsonl --profanity-backend ml
+python scripts/build_final_demo_reports.py
+python -m pytest -q
+```
+
+The fine-tuned model and the training-selected threshold must be present at
+`profanity_binary_classifier/artifacts/fine_tuned_rubert_tiny2/`. If they are
+missing, ML preflight must fail; do not present with a hidden fallback. The
+explicit `--profanity-backend rule` option is retained for non-ML rehearsal
+only. The runner writes reviewable JSON and Markdown reports under
+`data/processed/eval/`; `ANSWER` scenarios stay marked `REVIEW` until a person
+checks `final_grounding_review.md`.
+
+### Pre-demo checklist
+
+- [ ] ML profanity model and `threshold.json` loaded
+- [ ] Qwen embedding worker alive
+- [ ] Qdrant healthy; `zakupki_official` has 1,073 points
+- [ ] ticket BM25 index present
+- [ ] `RERANKER_ENABLED=0`
+- [ ] `RETRIEVAL_STRATEGY=dense_primary`
+- [ ] `CONFIDENCE_MIN_OFFICIAL_SCORE=0.60`
+- [ ] `CLARIFICATION_POLICY_ENABLED=1`
+- [ ] `python -m pytest -q` is green
+
+With both the 1,073-point collection and the worker ready, the default is `dense_primary`: Qdrant dense ranks official evidence. BM25 is retrieved cheaply for conservative recall rescue when the Dense result is weak and as the full fallback when Dense is unavailable. L3 additionally queries ticket BM25; tickets are never dense-indexed. `hybrid_rrf` and `bm25_only` remain available as explicit experimental strategies.
 
 Локальный ассистент поддержки Портала поставщиков Москвы. Проект не вызывает внешние LLM/API и не скачивает веса моделей автоматически. Ответ формируется только из найденного evidence или заменяется передачей оператору.
 

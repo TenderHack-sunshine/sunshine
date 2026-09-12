@@ -24,3 +24,18 @@ def test_official_evidence_is_before_secondary_ticket_and_context_is_tagged():
     assert compact[0]["authority"] == "official"
     context = tagged_context(compact)
     assert context.index("[OFFICIAL]") < context.index("[SUPPORT_TICKET]")
+
+
+def test_raw_bm25_score_does_not_reorder_dense_primary_evidence():
+    dense_first = {**_item("dense", "dense", 1, "dense result"), "score": .7, "retrieval_method": "dense"}
+    sparse_rescue = {**_item("sparse", "sparse", 1, "sparse rescue"), "score": 12.0, "retrieval_method": "bm25"}
+    compact = compact_evidence([dense_first, sparse_rescue])
+    assert [item["chunk_id"] for item in compact] == ["dense", "sparse"]
+
+
+def test_official_documentation_precedes_taxonomy_and_historical_ticket():
+    taxonomy = {**_item("taxonomy", "taxonomy", 1, "taxonomy"), "authority": "taxonomy"}
+    official = {**_item("official", "official", 1, "official"), "authority": "official"}
+    ticket = {**_item("ticket", "ticket", 1, "ticket"), "authority": "case_history"}
+    compact = compact_evidence([taxonomy, ticket, official])
+    assert [item["chunk_id"] for item in compact] == ["official", "taxonomy", "ticket"]

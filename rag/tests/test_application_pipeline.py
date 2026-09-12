@@ -55,7 +55,7 @@ def test_routes_l1_l2_and_l3_deterministically():
 
 def test_l3_calls_ticket_capable_retriever_and_sources_are_attributed():
     retriever = FakeRetriever([_source(), {**_source("support_ticket", "case_history"), "chunk_id": "ticket", "document_id": "ticket", "text": "Историческое решение ошибки подписи"}])
-    result = RAGService(retriever).ask("не подписывается оферта")
+    result = RAGService(retriever).ask("ошибка 500 при открытии оферты")
     assert result["status"] == "ANSWER"
     assert result["route"] == "L3"
     assert retriever.technical_calls == [True]
@@ -127,3 +127,9 @@ def test_low_official_agreement_can_clarify_when_explicitly_configured():
     evaluator = ConfidenceEvaluator(min_agreement=.5)
     features = {"top_score": .9, "official_evidence_present": True, "num_ticket_candidates": 0, "retrieval_agreement": 0.0}
     assert evaluator.decide("L1", [_source()], features) == ("NEEDS_CLARIFICATION", "official_retrieval_agreement_below_threshold")
+
+
+def test_confidence_uses_raw_dense_score_when_fused_score_is_absent():
+    evaluator = ConfidenceEvaluator()
+    features = evaluator.features([{**_source(), "score": None, "rrf_score": None, "raw_score": .73}], {})
+    assert features["top_score"] == .73

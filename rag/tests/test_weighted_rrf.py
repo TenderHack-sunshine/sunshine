@@ -45,6 +45,10 @@ def test_default_equal_weight_behavior_is_preserved():
     assert rrf_fuse(lists) == rrf_fuse(lists, weights=[1.0, 1.0])
 
 
+def test_dense_primary_is_the_default_retrieval_strategy():
+    assert Settings().retrieval_strategy == "dense_primary"
+
+
 def test_dense_weight_can_change_ranking():
     sparse = [item("sparse-first", "bm25")]
     dense = [item("dense-first", "dense")]
@@ -56,7 +60,7 @@ def test_dense_weight_can_change_ranking():
 
 @pytest.mark.parametrize(
     ("kwargs", "message"),
-    [({"rrf_k": 0}, "RRF_K"), ({"dense_fusion_weight": -0.1}, "DENSE_FUSION_WEIGHT"), ({"dense_fusion_weight": 0, "bm25_fusion_weight": 0}, "At least one")],
+    [({"rrf_k": 0}, "RRF_K"), ({"dense_fusion_weight": -0.1}, "DENSE_FUSION_WEIGHT"), ({"dense_fusion_weight": 0, "bm25_fusion_weight": 0}, "At least one"), ({"retrieval_strategy": "unknown"}, "RETRIEVAL_STRATEGY")],
 )
 def test_invalid_fusion_configuration_fails_predictably(kwargs, message):
     with pytest.raises(ValueError, match=message):

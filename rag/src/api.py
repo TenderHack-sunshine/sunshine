@@ -5,15 +5,15 @@ generation remain in their respective modules.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
 from src.core.config import Settings
 from src.generation.generator import EvidenceGenerator
 from src.main import answer_question
-from src.moderation.profanity import detect_profanity
 from src.retrieval.mvp import load_two_path_retriever
+from src.safety.profanity import ProfanityDetector, RuleProfanityDetector, build_profanity_detector
 
 
 class ServiceNotReadyError(RuntimeError):
@@ -24,6 +24,7 @@ class ServiceNotReadyError(RuntimeError):
 class RAGAPI:
     retriever: Any
     generator: EvidenceGenerator
+    profanity_detector: ProfanityDetector = field(default_factory=RuleProfanityDetector)
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RAGAPI":
@@ -36,14 +37,17 @@ class RAGAPI:
         return cls(
             retriever=load_two_path_retriever(canonical_path, ticket_index if ticket_index.exists() else None),
             generator=EvidenceGenerator(settings.min_evidence_score),
+            profanity_detector=build_profanity_detector(
+                settings.profanity_backend, settings.profanity_model_dir, settings.profanity_threshold_path,
+            ),
         )
 
     def process(self, payload: dict[str, Any]) -> dict[str, Any]:
         message = str(payload.get("message", "")).strip()
         if not message:
             raise ValueError("message is required")
-        moderation = detect_profanity(message)
-        if moderation["contains_profanity"]:
+        moderation = self.profanity_detector.detect(message)
+        if moderation.detected:
             return {
                 "status": "blocked",
                 "blocked_reason": "Обращение заблокировано из-за недопустимой лексики.",

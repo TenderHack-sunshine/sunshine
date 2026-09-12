@@ -17,6 +17,9 @@ class Settings:
     root_dir: Path = Path(__file__).resolve().parents[2]
     data_dir: Path | None = None
     model_dir: Path | None = None
+    profanity_model_dir: Path | None = None
+    profanity_threshold_path: Path | None = None
+    profanity_backend: str = os.getenv("PROFANITY_BACKEND", "ml").strip().lower()
     qdrant_host: str = os.getenv("QDRANT_HOST", "localhost")
     qdrant_port: int = int(os.getenv("QDRANT_PORT", "6333"))
     qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "zakupki_knowledge")
@@ -29,8 +32,11 @@ class Settings:
     hybrid_rerank_top_n: int = int(os.getenv("HYBRID_RERANK_TOP_N", "20"))
     evidence_max_per_document: int = int(os.getenv("EVIDENCE_MAX_PER_DOCUMENT", "2"))
     confidence_min_sources: int = int(os.getenv("CONFIDENCE_MIN_SOURCES", "1"))
-    confidence_min_official_score: float = float(os.getenv("CONFIDENCE_MIN_OFFICIAL_SCORE", "0.0"))
+    confidence_min_official_score: float = float(os.getenv("CONFIDENCE_MIN_OFFICIAL_SCORE", "0.60"))
     confidence_min_agreement: float = float(os.getenv("CONFIDENCE_MIN_AGREEMENT", "0.0"))
+    clarification_policy_enabled: bool = os.getenv("CLARIFICATION_POLICY_ENABLED", "1").lower() not in {"0", "false", "no"}
+    clarification_short_failure_max_tokens: int = int(os.getenv("CLARIFICATION_SHORT_FAILURE_MAX_TOKENS", "3"))
+    clarification_broad_policy_max_tokens: int = int(os.getenv("CLARIFICATION_BROAD_POLICY_MAX_TOKENS", "4"))
     use_qdrant: bool = os.getenv("USE_QDRANT", "1").lower() not in {"0", "false", "no"}
     bm25_top_k: int = int(os.getenv("BM25_TOP_K", "20"))
     dense_top_k: int = int(os.getenv("DENSE_TOP_K", "20"))
@@ -63,6 +69,8 @@ class Settings:
     zakupki_kb_max_chunk_tokens: int = int(os.getenv("ZAKUPKI_KB_MAX_CHUNK_TOKENS", "700"))
 
     def __post_init__(self) -> None:
+        if self.profanity_backend not in {"ml", "rule"}:
+            raise ValueError("PROFANITY_BACKEND must be ml or rule")
         if self.rrf_k <= 0:
             raise ValueError("RRF_K must be a positive integer")
         if self.dense_fusion_weight < 0 or self.bm25_fusion_weight < 0:
@@ -77,8 +85,13 @@ class Settings:
             raise ValueError("DENSE_PRIMARY_MIN_AGREEMENT must be between 0 and 1")
         if self.dense_primary_keep_top_k < 1 or self.bm25_rescue_top_k < 1:
             raise ValueError("Dense-primary keep/rescue top-k values must be positive")
+        if self.clarification_short_failure_max_tokens < 1 or self.clarification_broad_policy_max_tokens < 1:
+            raise ValueError("Clarification-policy token limits must be positive")
         object.__setattr__(self, "data_dir", _path_env("DATA_DIR", self.root_dir / "data") if self.data_dir is None else Path(self.data_dir))
         object.__setattr__(self, "model_dir", _path_env("MODEL_DIR", self.root_dir / "models") if self.model_dir is None else Path(self.model_dir))
+        profanity_root = self.root_dir / "profanity_binary_classifier" / "artifacts" / "fine_tuned_rubert_tiny2"
+        object.__setattr__(self, "profanity_model_dir", _path_env("PROFANITY_MODEL_DIR", profanity_root / "best_model") if self.profanity_model_dir is None else Path(self.profanity_model_dir))
+        object.__setattr__(self, "profanity_threshold_path", _path_env("PROFANITY_THRESHOLD_PATH", profanity_root / "threshold.json") if self.profanity_threshold_path is None else Path(self.profanity_threshold_path))
 
     @property
     def manuals_dir(self) -> Path:

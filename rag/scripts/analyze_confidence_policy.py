@@ -81,7 +81,9 @@ def score_config(rows: list[dict], min_score: float, min_agreement: float, min_s
 
 
 def collect(cases: list[dict]) -> tuple[list[dict], dict[str, dict[str, float | int | None]]]:
-    settings = Settings(retrieval_strategy="dense_primary", rerank_enabled=False)
+    # Offline retrieval analysis intentionally uses the explicit lightweight
+    # safety backend when local fine-tuned artifacts are not mounted.
+    settings = Settings(retrieval_strategy="dense_primary", rerank_enabled=False, profanity_backend="rule")
     service = build_rag_service(settings)
     rows, dense_primary, hybrid, bm25 = [], [], [], []
     for index, case in enumerate(cases, 1):
