@@ -103,3 +103,60 @@ type Feedback struct {
 	Resolved         bool      `json:"resolved"`
 	CreatedAt        time.Time `json:"created_at"`
 }
+
+// Role distinguishes regular portal users from support staff.
+type Role string
+
+const (
+	RoleUser           Role = "user"
+	RoleTechSpecialist Role = "tech_specialist"
+	RoleAdmin          Role = "admin"
+)
+
+// SupportLine is the tech specialist's assigned support line. It mirrors the
+// support_level values ("L1"/"L2"/"L3") already produced by the RAG pipeline
+// on SupportRequest/Ticket, so a specialist's line can be matched directly
+// against a ticket's SupportLevel.
+type SupportLine string
+
+const (
+	SupportLineNone SupportLine = ""
+	SupportLineL1   SupportLine = "L1"
+	SupportLineL2   SupportLine = "L2"
+	SupportLineL3   SupportLine = "L3"
+)
+
+// SpecialistStatus tracks the approval workflow for a self-registered tech
+// specialist. It is meaningless (empty) for role=user and role=admin.
+type SpecialistStatus string
+
+const (
+	SpecialistStatusNone     SpecialistStatus = ""
+	SpecialistStatusPending  SpecialistStatus = "pending"
+	SpecialistStatusApproved SpecialistStatus = "approved"
+	SpecialistStatusRejected SpecialistStatus = "rejected"
+)
+
+type User struct {
+	ID               string           `json:"id"`
+	Email            string           `json:"email"`
+	PasswordHash     string           `json:"-"`
+	DisplayName      string           `json:"display_name"`
+	Role             Role             `json:"role"`
+	Line             SupportLine      `json:"line,omitempty"`
+	SpecialistStatus SpecialistStatus `json:"specialist_status,omitempty"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+}
+
+// RefreshToken is stored hashed (never the raw token) so a leaked database
+// cannot be used to mint sessions; it is looked up by TokenHash and can be
+// revoked individually or in bulk per user.
+type RefreshToken struct {
+	ID        string     `json:"-"`
+	UserID    string     `json:"-"`
+	TokenHash string     `json:"-"`
+	ExpiresAt time.Time  `json:"-"`
+	RevokedAt *time.Time `json:"-"`
+	CreatedAt time.Time  `json:"-"`
+}

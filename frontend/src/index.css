@@ -685,6 +685,33 @@ body {
   margin-top: 12px;
 }
  
+/* API / network errors */
+.msg-error-block {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #b92734;
+  background: #fde8e9;
+  border: 1px solid #f5b8bb;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+/* Admin: rule-based conclusions summary */
+.ra-conclusions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: #f7f8fa;
+  border: 1px solid #d9dde4;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: #172033;
+}
+
+.ra-conclusion-row strong { font-weight: 600; }
+
 /* Escalation */
 .escalation-block {
   font-size: 14px;

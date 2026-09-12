@@ -17,44 +17,166 @@ import (
 )
 
 const maxBodyBytes = 1 << 20
+const refreshCookieName = "refresh_token"
+const bearerPrefix = "Bearer "
 
 type Server struct {
-	support   *application.SupportService
-	tickets   *application.TicketService
-	feedback  *application.FeedbackService
-	analytics *application.AnalyticsService
-	logger    *slog.Logger
+	support        *application.SupportService
+	tickets        *application.TicketService
+	feedback       *application.FeedbackService
+	analytics      *application.AnalyticsService
+	auth           *application.AuthService
+	admin          *application.AdminService
+	frontendOrigin string
+	cookieSecure   bool
+	logger         *slog.Logger
 }
 
-func NewServer(support *application.SupportService, tickets *application.TicketService, feedback *application.FeedbackService, analytics *application.AnalyticsService, logger *slog.Logger) http.Handler {
-	server := &Server{support: support, tickets: tickets, feedback: feedback, analytics: analytics, logger: logger}
+func NewServer(support *application.SupportService, tickets *application.TicketService, feedback *application.FeedbackService, analytics *application.AnalyticsService, auth *application.AuthService, admin *application.AdminService, frontendOrigin string, cookieSecure bool, logger *slog.Logger) http.Handler {
+	server := &Server{support: support, tickets: tickets, feedback: feedback, analytics: analytics, auth: auth, admin: admin, frontendOrigin: frontendOrigin, cookieSecure: cookieSecure, logger: logger}
 	mux := http.NewServeMux()
 	health := func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
 	mux.HandleFunc("GET /health", health)
 	mux.HandleFunc("GET /healthz", health)
+
+	mux.HandleFunc("POST /auth/register", server.register)
+	mux.HandleFunc("POST /auth/register-specialist", server.registerSpecialist)
+	mux.HandleFunc("POST /auth/login", server.login)
+	mux.HandleFunc("POST /auth/refresh", server.refresh)
+	mux.HandleFunc("POST /auth/logout", server.logout)
+	mux.HandleFunc("GET /auth/me", server.me)
+
 	mux.HandleFunc("POST /support/requests", server.createRequest)
 	mux.HandleFunc("GET /support/requests/{id}", server.getRequest)
 	mux.HandleFunc("POST /support/requests/{id}/messages", server.addMessage)
 	mux.HandleFunc("GET /support/requests/{id}/messages", server.listMessages)
+	mux.HandleFunc("POST /feedback", server.createFeedback)
+
 	mux.HandleFunc("GET /operator/tickets", server.listTickets)
 	mux.HandleFunc("GET /operator/tickets/{id}", server.getTicket)
 	mux.HandleFunc("POST /operator/tickets/{id}/take", server.takeTicket)
 	mux.HandleFunc("POST /operator/tickets/{id}/answer", server.answerTicket)
 	mux.HandleFunc("POST /operator/tickets/{id}/close", server.closeTicket)
-	mux.HandleFunc("POST /feedback", server.createFeedback)
+
 	mux.HandleFunc("GET /analytics/overview", server.analyticsOverview)
 	mux.HandleFunc("GET /analytics/requests", server.analyticsRequests)
 	mux.HandleFunc("GET /analytics/summary", server.summary)
 	mux.HandleFunc("GET /analytics/topics", server.topics)
 	mux.HandleFunc("GET /analytics/feedback", server.feedbackStats)
 	mux.HandleFunc("GET /analytics/conclusions", server.conclusions)
+
+	mux.HandleFunc("GET /admin/users", server.adminListUsers)
+	mux.HandleFunc("GET /admin/specialists/pending", server.adminPendingSpecialists)
+	mux.HandleFunc("POST /admin/specialists/{id}/approve", server.adminApproveSpecialist)
+	mux.HandleFunc("POST /admin/specialists/{id}/reject", server.adminRejectSpecialist)
+	mux.HandleFunc("POST /admin/users/{id}/role", server.adminSetRole)
+
 	return server.withLogging(server.withCORS(mux))
 }
 
+// --- Auth ---
+
+func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		DisplayName string `json:"display_name"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	result, err := s.auth.Register(r.Context(), input.Email, input.Password, input.DisplayName)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	s.respondWithSession(w, http.StatusCreated, result)
+}
+
+func (s *Server) registerSpecialist(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		DisplayName string `json:"display_name"`
+		Line        string `json:"line"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	user, err := s.auth.RegisterSpecialist(r.Context(), input.Email, input.Password, input.DisplayName, domain.SupportLine(input.Line))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"user":    user,
+		"message": "Заявка отправлена. Доступ откроется после подтверждения администратором.",
+	})
+}
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	result, err := s.auth.Login(r.Context(), input.Email, input.Password)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	s.respondWithSession(w, http.StatusOK, result)
+}
+
+func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(refreshCookieName)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing refresh token")
+		return
+	}
+	result, err := s.auth.Refresh(r.Context(), cookie.Value)
+	if err != nil {
+		s.clearRefreshCookie(w)
+		writeServiceError(w, err)
+		return
+	}
+	s.respondWithSession(w, http.StatusOK, result)
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(refreshCookieName); err == nil {
+		_ = s.auth.Logout(r.Context(), cookie.Value)
+	}
+	s.clearRefreshCookie(w)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return
+	}
+	user, err := s.auth.Me(r.Context(), actor.UserID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+func (s *Server) respondWithSession(w http.ResponseWriter, status int, result application.AuthResult) {
+	s.setRefreshCookie(w, result.RefreshToken, result.RefreshTTL)
+	writeJSON(w, status, map[string]any{"access_token": result.AccessToken, "user": result.User})
+}
+
+// --- Support / feedback (any authenticated actor) ---
+
 func (s *Server) createRequest(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
+	actor, ok := s.authenticate(r, w)
 	if !ok {
 		return
 	}
@@ -74,7 +196,7 @@ func (s *Server) createRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) analyticsRequests(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
+	if _, ok := s.requireStaff(r, w); !ok {
 		return
 	}
 
@@ -90,7 +212,7 @@ func (s *Server) analyticsRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getRequest(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
+	actor, ok := s.authenticate(r, w)
 	if !ok {
 		return
 	}
@@ -103,7 +225,7 @@ func (s *Server) getRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addMessage(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
+	actor, ok := s.authenticate(r, w)
 	if !ok {
 		return
 	}
@@ -123,7 +245,7 @@ func (s *Server) addMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
+	actor, ok := s.authenticate(r, w)
 	if !ok {
 		return
 	}
@@ -135,89 +257,8 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
 }
 
-func (s *Server) listTickets(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
-		return
-	}
-	var status *domain.TicketStatus
-	if value := r.URL.Query().Get("status"); value != "" {
-		parsed := domain.TicketStatus(value)
-		switch parsed {
-		case domain.TicketStatusWaitingForOperator, domain.TicketStatusInProgress, domain.TicketStatusAnswered, domain.TicketStatusClosed:
-			status = &parsed
-		default:
-			writeError(w, http.StatusBadRequest, "INVALID_STATUS", "Unknown ticket status")
-			return
-		}
-	}
-	tickets, err := s.tickets.List(r.Context(), status)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
-}
-
-func (s *Server) getTicket(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
-		return
-	}
-	ticket, messages, err := s.tickets.GetDetail(r.Context(), r.PathValue("id"))
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ticket": ticket, "conversation": messages})
-}
-func (s *Server) takeTicket(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
-	if !ok {
-		return
-	}
-	ticket, err := s.tickets.Take(r.Context(), actor.UserID, r.PathValue("id"))
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	s.logger.Info("operator took ticket", "user_id", actor.UserID, "ticket_id", ticket.ID, "ticket_status", ticket.Status)
-	writeJSON(w, http.StatusOK, ticket)
-}
-func (s *Server) closeTicket(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
-	if !ok {
-		return
-	}
-	ticket, err := s.tickets.Close(r.Context(), actor.UserID, r.PathValue("id"))
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	s.logger.Info("operator closed ticket", "user_id", actor.UserID, "ticket_id", ticket.ID, "ticket_status", ticket.Status)
-	writeJSON(w, http.StatusOK, ticket)
-}
-
-func (s *Server) answerTicket(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
-	if !ok {
-		return
-	}
-	var input struct {
-		Answer string `json:"answer"`
-	}
-	if !decode(w, r, &input) {
-		return
-	}
-	ticket, err := s.tickets.Answer(r.Context(), actor.UserID, r.PathValue("id"), input.Answer)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	s.logger.Info("operator answered ticket", "user_id", actor.UserID, "ticket_id", ticket.ID, "ticket_status", ticket.Status)
-	writeJSON(w, http.StatusOK, ticket)
-}
-
 func (s *Server) createFeedback(w http.ResponseWriter, r *http.Request) {
-	actor, ok := user(r, w)
+	actor, ok := s.authenticate(r, w)
 	if !ok {
 		return
 	}
@@ -239,7 +280,7 @@ func (s *Server) createFeedback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) analyticsOverview(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
+	if _, ok := s.requireStaff(r, w); !ok {
 		return
 	}
 
@@ -248,12 +289,100 @@ func (s *Server) analyticsOverview(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-
 	writeJSON(w, http.StatusOK, result)
 }
 
+// --- Operator / tech-specialist ticket queue ---
+
+func (s *Server) listTickets(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireStaff(r, w)
+	if !ok {
+		return
+	}
+	var status *domain.TicketStatus
+	if value := r.URL.Query().Get("status"); value != "" {
+		parsed := domain.TicketStatus(value)
+		switch parsed {
+		case domain.TicketStatusWaitingForOperator, domain.TicketStatusInProgress, domain.TicketStatusAnswered, domain.TicketStatusClosed:
+			status = &parsed
+		default:
+			writeError(w, http.StatusBadRequest, "INVALID_STATUS", "Unknown ticket status")
+			return
+		}
+	}
+	tickets, err := s.tickets.List(r.Context(), actor, status)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tickets": tickets})
+}
+
+func (s *Server) getTicket(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireStaff(r, w)
+	if !ok {
+		return
+	}
+	ticket, messages, err := s.tickets.GetDetail(r.Context(), actor, r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticket": ticket, "conversation": messages})
+}
+
+func (s *Server) takeTicket(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireStaff(r, w)
+	if !ok {
+		return
+	}
+	ticket, err := s.tickets.Take(r.Context(), actor, r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	s.logger.Info("operator took ticket", "user_id", actor.UserID, "ticket_id", ticket.ID, "ticket_status", ticket.Status)
+	writeJSON(w, http.StatusOK, ticket)
+}
+
+func (s *Server) answerTicket(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireStaff(r, w)
+	if !ok {
+		return
+	}
+	var input struct {
+		Answer string `json:"answer"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	ticket, err := s.tickets.Answer(r.Context(), actor, r.PathValue("id"), input.Answer)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	s.logger.Info("operator answered ticket", "user_id", actor.UserID, "ticket_id", ticket.ID, "ticket_status", ticket.Status)
+	writeJSON(w, http.StatusOK, ticket)
+}
+
+func (s *Server) closeTicket(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireStaff(r, w)
+	if !ok {
+		return
+	}
+	ticket, err := s.tickets.Close(r.Context(), actor, r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	s.logger.Info("operator closed ticket", "user_id", actor.UserID, "ticket_id", ticket.ID, "ticket_status", ticket.Status)
+	writeJSON(w, http.StatusOK, ticket)
+}
+
+// --- Analytics (staff dashboard) ---
+
 func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
+	if _, ok := s.requireStaff(r, w); !ok {
 		return
 	}
 	result, err := s.analytics.Summary(r.Context())
@@ -264,7 +393,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) topics(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
+	if _, ok := s.requireStaff(r, w); !ok {
 		return
 	}
 	result, err := s.analytics.Snapshot(r.Context())
@@ -275,7 +404,7 @@ func (s *Server) topics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"requests_by_topic": result.RequestsByTopic, "requests_by_support_level": result.RequestsByLevel})
 }
 func (s *Server) feedbackStats(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
+	if _, ok := s.requireStaff(r, w); !ok {
 		return
 	}
 	result, err := s.analytics.Snapshot(r.Context())
@@ -286,7 +415,7 @@ func (s *Server) feedbackStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"average_feedback": result.AverageFeedback, "unresolved_feedback_count": result.UnresolvedFeedback})
 }
 func (s *Server) conclusions(w http.ResponseWriter, r *http.Request) {
-	if _, ok := user(r, w); !ok {
+	if _, ok := s.requireStaff(r, w); !ok {
 		return
 	}
 	result, err := s.analytics.Conclusions(r.Context())
@@ -296,6 +425,79 @@ func (s *Server) conclusions(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"conclusions": result})
 }
+
+// --- Admin: specialist approval queue + direct role grants ---
+
+func (s *Server) adminListUsers(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return
+	}
+	users, err := s.admin.ListUsers(r.Context(), actor)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *Server) adminPendingSpecialists(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return
+	}
+	users, err := s.admin.ListPendingSpecialists(r.Context(), actor)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"specialists": users})
+}
+
+func (s *Server) adminApproveSpecialist(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return
+	}
+	if err := s.admin.ApproveSpecialist(r.Context(), actor, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
+}
+
+func (s *Server) adminRejectSpecialist(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return
+	}
+	if err := s.admin.RejectSpecialist(r.Context(), actor, r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
+}
+
+func (s *Server) adminSetRole(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return
+	}
+	var input struct {
+		Role string `json:"role"`
+		Line string `json:"line"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if err := s.admin.SetRole(r.Context(), actor, r.PathValue("id"), domain.Role(input.Role), domain.SupportLine(input.Line)); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// --- Shared response helpers (unchanged from the pre-auth version) ---
 
 type supportResponse struct {
 	Status                domain.RequestStatus `json:"status"`
@@ -330,14 +532,69 @@ func userResponse(request domain.SupportRequest, ticket *domain.Ticket) supportR
 	return response
 }
 
-func user(r *http.Request, w http.ResponseWriter) (application.Actor, bool) {
-	id := strings.TrimSpace(r.Header.Get("X-Portal-User-ID"))
-	if id == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing portal identity")
+// authenticate verifies the Authorization: Bearer <access token> header and
+// resolves it to an Actor. This replaces the old X-Portal-User-ID dev header
+// entirely: every request now carries a signed, expiring token instead of a
+// caller-supplied identity.
+func (s *Server) authenticate(r *http.Request, w http.ResponseWriter) (application.Actor, bool) {
+	header := r.Header.Get("Authorization")
+	if !strings.HasPrefix(header, bearerPrefix) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing or malformed Authorization header")
 		return application.Actor{}, false
 	}
-	return application.Actor{UserID: id}, true
+	token := strings.TrimSpace(strings.TrimPrefix(header, bearerPrefix))
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing or malformed Authorization header")
+		return application.Actor{}, false
+	}
+	actor, err := s.auth.ParseAccessToken(token)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Invalid or expired token")
+		return application.Actor{}, false
+	}
+	return actor, true
 }
+
+// requireStaff authenticates and additionally rejects a plain "user" actor.
+// Used for the operator ticket queue and the analytics dashboard, both of
+// which are staff-only surfaces.
+func (s *Server) requireStaff(r *http.Request, w http.ResponseWriter) (application.Actor, bool) {
+	actor, ok := s.authenticate(r, w)
+	if !ok {
+		return application.Actor{}, false
+	}
+	if !actor.IsStaff() {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Access denied")
+		return application.Actor{}, false
+	}
+	return actor, true
+}
+
+func (s *Server) setRefreshCookie(w http.ResponseWriter, token string, ttl time.Duration) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    token,
+		Path:     "/auth",
+		Expires:  time.Now().Add(ttl),
+		HttpOnly: true,
+		Secure:   s.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (s *Server) clearRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     "/auth",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   s.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	decoder := json.NewDecoder(r.Body)
@@ -369,6 +626,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "RAG_UNAVAILABLE", "Сервис обработки обращения временно недоступен")
 	case errors.Is(err, application.ErrInvalidRAGResult):
 		writeError(w, http.StatusBadGateway, "RAG_INVALID_RESPONSE", "Сервис обработки обращения вернул некорректный ответ")
+	case errors.Is(err, application.ErrEmailTaken):
+		writeError(w, http.StatusConflict, "EMAIL_TAKEN", "Этот email уже зарегистрирован")
+	case errors.Is(err, application.ErrInvalidCredentials):
+		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Неверный email или пароль")
+	case errors.Is(err, application.ErrPendingApproval):
+		writeError(w, http.StatusForbidden, "PENDING_APPROVAL", "Заявка ожидает подтверждения администратором")
+	case errors.Is(err, application.ErrRegistrationRejected):
+		writeError(w, http.StatusForbidden, "REGISTRATION_REJECTED", "Заявка была отклонена администратором")
 	default:
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
 	}
@@ -401,13 +666,28 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 		started := time.Now()
 		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(wrapped, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID)))
-		s.logger.Info("http request", "request_id", requestID, "user_id", r.Header.Get("X-Portal-User-ID"), "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration_ms", time.Since(started).Milliseconds())
+		s.logger.Info("http request", "request_id", requestID, "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration_ms", time.Since(started).Milliseconds())
 	})
 }
+
+// withCORS allows the configured single-page-app origin to call the API
+// with credentials (the refresh-token cookie), which requires echoing back
+// one concrete origin rather than "*". If FRONTEND_ORIGIN is unset it falls
+// back to reflecting the request's own Origin header, which keeps local
+// development (arbitrary ports) working without extra configuration.
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Portal-User-ID, X-Request-ID")
+		origin := r.Header.Get("Origin")
+		allowed := s.frontendOrigin
+		if allowed == "" {
+			allowed = origin
+		}
+		if allowed != "" {
+			w.Header().Set("Access-Control-Allow-Origin", allowed)
+			w.Header().Set("Vary", "Origin")
+		}
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

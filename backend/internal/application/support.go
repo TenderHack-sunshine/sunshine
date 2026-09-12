@@ -14,8 +14,6 @@ import (
 
 const maxMessageLength = 8_000
 
-type Actor struct{ UserID string }
-
 type SupportService struct {
 	store port.Store
 	rag   port.RAGClient
