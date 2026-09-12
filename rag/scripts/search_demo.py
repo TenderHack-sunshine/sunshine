@@ -25,7 +25,7 @@ def main() -> None:
     if tickets_file.exists():
         tickets = [json.loads(line) for line in tickets_file.read_text(encoding="utf-8").splitlines() if line.strip()]
         chunks.extend(tickets_to_chunks(tickets))
-    retriever = build_retriever(chunks, settings)
+    retriever = build_retriever(chunks, settings, use_dense=settings.use_qdrant)
     taxonomy_files = sorted(settings.tickets_dir.glob("*темы*.*")) + sorted(settings.tickets_dir.glob("*Темы*.*"))
     router = TaxonomyRouter(load_taxonomy(taxonomy_files[0])) if taxonomy_files else None
     generator = EvidenceGenerator(settings.min_evidence_score)

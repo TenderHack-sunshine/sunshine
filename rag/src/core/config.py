@@ -31,6 +31,7 @@ class Settings:
     confidence_min_sources: int = int(os.getenv("CONFIDENCE_MIN_SOURCES", "1"))
     confidence_min_official_score: float = float(os.getenv("CONFIDENCE_MIN_OFFICIAL_SCORE", "0.0"))
     confidence_min_agreement: float = float(os.getenv("CONFIDENCE_MIN_AGREEMENT", "0.0"))
+    use_qdrant: bool = os.getenv("USE_QDRANT", "1").lower() not in {"0", "false", "no"}
     bm25_top_k: int = int(os.getenv("BM25_TOP_K", "20"))
     dense_top_k: int = int(os.getenv("DENSE_TOP_K", "20"))
     fusion_top_k: int = int(os.getenv("FUSION_TOP_K", "20"))

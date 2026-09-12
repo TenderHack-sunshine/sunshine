@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sunshine
+      POSTGRES_USER: sunshine
+      POSTGRES_PASSWORD: sunshine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sunshine -d sunshine"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgres://sunshine:sunshine@postgres:5432/sunshine?sslmode=disable
+      AI_SERVICE_URL: http://rag:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  assistant-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: api
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://sunshine:sunshine@postgres:5432/sunshine?sslmode=disable
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://rag:8000}
+      AI_SERVICE_TIMEOUT: ${AI_SERVICE_TIMEOUT:-15}
+    ports:
+      - "${API_HOST_PORT:-8081}:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
