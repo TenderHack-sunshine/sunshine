@@ -13,7 +13,13 @@ query -> moderation -> normalization -> technical router
 
 The official dense collection is named `zakupki_official`. It must contain exactly 1,073 points and never contains `support_ticket` records. Qdrant is optional at runtime: an unavailable collection, Qdrant error, embedding error, or dense-query timeout explicitly selects the lightweight official BM25 fallback; the CLI prints `dense_available=false` and `fallback_used=true`.
 
+On the Windows Intel host, start the persistent local Qwen worker once before serving requests. It loads and warms the model once, then the RAG process uses Qdrant only via REST/HTTP.
+
 ```powershell
+# Start once in a separate terminal; verify it is ready before serving traffic.
+python -u scripts/embedding_worker.py
+python scripts/embedding_worker.py --status
+
 # End-to-end application; it uses fallback BM25 until the complete collection is available.
 python scripts/ask.py "как добавить МЧД"
 
@@ -25,7 +31,9 @@ Start-Process python -ArgumentList '-u','scripts/index_official_qdrant.py','--ba
 
 ```
 
-`scripts/ask.py` is the stable end-to-end entry point. It uses `dense_available=false` and `fallback_used=true` until REST Qdrant reports exactly 1,073 official points; it never attempts dense embedding of the 25,044 historical tickets.
+`scripts/ask.py` is the stable end-to-end entry point. It uses `dense_available=false` and `fallback_used=true` until REST Qdrant reports exactly 1,073 official points and the persistent worker is ready; it never attempts dense embedding of the 25,044 historical tickets.
+
+With both the 1,073-point collection and the worker ready, official retrieval is `HYBRID`: official BM25 top 20 plus Qdrant dense top 20, fused with RRF. L3 additionally queries ticket BM25; tickets are never dense-indexed.
 
 Локальный ассистент поддержки Портала поставщиков Москвы. Проект не вызывает внешние LLM/API и не скачивает веса моделей автоматически. Ответ формируется только из найденного evidence или заменяется передачей оператору.
 
@@ -138,6 +146,32 @@ python -u scripts/index_official_qdrant.py --recreate --batch-size 1 --log-every
 ```
 
 Collection называется `zakupki_official`; vectors имеют dimension 1024 и cosine distance. Точки строятся из стабильного `chunk_id`, checkpoint находится в `data/processed/index/official_index_checkpoint.json`. При обычном повторном запуске уже подтверждённые batches не вычисляются заново. Progress и ошибки записываются в `official_index.log` и `official_index.err.log` при фоновом запуске из верхней команды README.
+
+## Retrieval evaluation and optional reranking
+
+Offline evaluation uses JSONL. Each row may contain only the fields already human-validated:
+
+```json
+{"query":"как добавить МЧД","route":"L1","relevant_chunk_ids":["..."],"relevant_document_ids":["..."],"expected_decision":"ANSWER","notes":"optional"}
+```
+
+`relevant_chunk_ids` and `relevant_document_ids` are optional. Unlabelled rows still provide diagnostics and latency, but are deliberately excluded from Recall/MRR rather than receiving invented labels.
+
+Use the terminal labeler to review the current 30-query dataset. It displays compact hybrid evidence and writes atomically, preserving `query`, route and expected decision. Every save creates `retrieval_eval.jsonl.bak`.
+
+```powershell
+python scripts/label_retrieval_eval.py data/eval/retrieval_eval.jsonl
+```
+
+Commands: `1 3` adds both chunk/document labels, `c 1` adds chunk-only, `d 1` adds document-only, `r 1 3` explicitly replaces, `note text` saves a note, `s` skips, `n` marks none relevant, and `q` saves then exits.
+
+```powershell
+python scripts/evaluate_retrieval.py data/eval/retrieval_eval.jsonl --output data/processed/eval/retrieval_eval_report.json --markdown data/processed/eval/retrieval_eval_report.md
+```
+
+Add `--markdown data/processed/eval/retrieval_eval_report.md` for a presentation-friendly report. The report compares `BM25`, `DENSE`, `HYBRID` and `HYBRID_RERANKED`, calculates separate chunk/document Recall/HitRate at 1/3/5/10 and MRR@10, reports route/category groups, route/decision accuracy, compact groundedness diagnostics, failure analysis, and p50/p95 latency.
+
+Reranking is optional. `RERANKER_ENABLED=0` is the safe default (`RERANK_ENABLED` remains compatible); when enabled, a local compatible CrossEncoder is used only on `HYBRID_RERANK_TOP_N=20` candidates. A load or inference failure keeps the RRF order and does not fail the request. The default final evidence size is `FINAL_TOP_K=5`.
 
 ## Что намеренно не включено
 

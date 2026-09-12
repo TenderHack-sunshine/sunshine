@@ -22,11 +22,20 @@ def _source(kind="official_manual", authority="official"):
 
 
 def test_profanity_is_a_hard_exit_before_routing_or_retrieval():
+    class Context:
+        def needs_clarification(self, _query):
+            raise AssertionError("clarification must not run for profanity")
+
+    class Router:
+        def classify(self, _query):
+            raise AssertionError("routing must not run for profanity")
+
     retriever = FakeRetriever([_source()])
-    result = RAGService(retriever).ask("блять не работает")
-    assert result["status"] == "REJECTED_PROFANITY"
+    result = RAGService(retriever, context=Context(), router=Router()).ask("блять не работает")
+    assert result["status"] == "REFUSE_PROFANITY"
     assert retriever.technical_calls == []
     assert result["sources"] == []
+    assert result["diagnostics"]["retrieval_mode"] == "NONE"
 
 
 def test_underspecified_error_needs_clarification_before_retrieval():
@@ -45,7 +54,7 @@ def test_routes_l1_l2_and_l3_deterministically():
 
 
 def test_l3_calls_ticket_capable_retriever_and_sources_are_attributed():
-    retriever = FakeRetriever([_source(), _source("support_ticket", "case_history")])
+    retriever = FakeRetriever([_source(), {**_source("support_ticket", "case_history"), "chunk_id": "ticket", "document_id": "ticket", "text": "Историческое решение ошибки подписи"}])
     result = RAGService(retriever).ask("не подписывается оферта")
     assert result["status"] == "ANSWER"
     assert result["route"] == "L3"
@@ -63,6 +72,21 @@ def test_insufficient_evidence_escalates_and_reranker_failure_falls_back():
     usable = RAGService(FakeRetriever([_source()]), reranker=BrokenReranker(), rerank_enabled=True).ask("как добавить мчд")
     assert usable["status"] == "ANSWER"
     assert usable["diagnostics"]["reranker_used"] is False
+
+
+def test_optional_reranker_can_reorder_hybrid_candidates():
+    class OrderingReranker:
+        available = True
+        last_latency_ms = 2.0
+
+        @staticmethod
+        def rerank(_query, candidates, _top_k):
+            return [{**candidates[-1], "reranker_score": .9}, {**candidates[0], "reranker_score": .1}]
+
+    first, second = _source(), {**_source(), "chunk_id": "second", "document_id": "second", "text": "Другая инструкция"}
+    result = RAGService(FakeRetriever([first, second]), reranker=OrderingReranker(), rerank_enabled=True).ask("как добавить мчд")
+    assert result["diagnostics"]["reranker_used"] is True
+    assert result["sources"][0]["chunk_id"] == "second"
 
 
 def test_partial_qdrant_index_is_ignored_and_complete_index_is_activated(monkeypatch):

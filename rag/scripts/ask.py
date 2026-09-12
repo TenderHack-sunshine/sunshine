@@ -30,6 +30,8 @@ def main() -> None:
     print(f"route: {result['route']}")
     print(f"dense_available: {str(result['diagnostics']['dense_available']).lower()}")
     print(f"fallback_used: {str(result['diagnostics']['fallback_used']).lower()}")
+    print(f"retrieval_mode: {result['diagnostics']['retrieval_mode']}")
+    print(f"candidates: dense={result['diagnostics'].get('dense_candidates', 0)} bm25={result['diagnostics'].get('bm25_candidates', 0)} hybrid={result['diagnostics'].get('hybrid_candidates', 0)}")
     print(f"decision: {result['status']}")
     print("sources:")
     for source in result["sources"]:

@@ -22,9 +22,15 @@ class Settings:
     qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "zakupki_knowledge")
     qdrant_official_collection: str = os.getenv("QDRANT_OFFICIAL_COLLECTION", "zakupki_official")
     dense_query_timeout_seconds: float = float(os.getenv("DENSE_QUERY_TIMEOUT_SECONDS", "12"))
+    dense_worker_host: str = os.getenv("DENSE_WORKER_HOST", "127.0.0.1")
+    dense_worker_port: int = int(os.getenv("DENSE_WORKER_PORT", "8765"))
     official_expected_points: int = int(os.getenv("OFFICIAL_EXPECTED_POINTS", "1073"))
-    rerank_enabled: bool = os.getenv("RERANK_ENABLED", "0").lower() in {"1", "true", "yes"}
+    rerank_enabled: bool = os.getenv("RERANKER_ENABLED", os.getenv("RERANK_ENABLED", "0")).lower() in {"1", "true", "yes"}
+    hybrid_rerank_top_n: int = int(os.getenv("HYBRID_RERANK_TOP_N", "20"))
+    evidence_max_per_document: int = int(os.getenv("EVIDENCE_MAX_PER_DOCUMENT", "2"))
     confidence_min_sources: int = int(os.getenv("CONFIDENCE_MIN_SOURCES", "1"))
+    confidence_min_official_score: float = float(os.getenv("CONFIDENCE_MIN_OFFICIAL_SCORE", "0.0"))
+    confidence_min_agreement: float = float(os.getenv("CONFIDENCE_MIN_AGREEMENT", "0.0"))
     bm25_top_k: int = int(os.getenv("BM25_TOP_K", "20"))
     dense_top_k: int = int(os.getenv("DENSE_TOP_K", "20"))
     fusion_top_k: int = int(os.getenv("FUSION_TOP_K", "20"))

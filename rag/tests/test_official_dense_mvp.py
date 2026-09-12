@@ -101,11 +101,32 @@ def test_technical_query_fuses_dense_official_and_ticket_bm25_with_schema_and_ti
     trace = retriever.retrieve_with_trace("offer error", technical=True, top_k=5)
     assert trace["dense_available"] is True
     assert trace["fallback_used"] is False
+    assert trace["retrieval_mode"] == "HYBRID"
     assert trace["official_dense"][0]["retrieval_method"] == "dense"
     assert trace["ticket_bm25"][0]["retrieval_method"] == "bm25"
     assert {item["source_type"] for item in trace["results"]} == {"official_manual", "support_ticket"}
     assert all({"chunk_id", "document_id", "text", "source_type", "authority", "retrieval_method", "raw_score", "rank", "metadata", "rrf_score"} <= set(item) for item in trace["results"])
     assert set(trace["timing"]) >= {"query_embedding_ms", "dense_search_ms", "bm25_ms", "fusion_ms", "total_retrieval_ms"}
+
+
+def test_official_bm25_and_dense_duplicate_is_one_hybrid_rrf_result():
+    official = _chunk("official", "offer guide", "official_manual", "official")
+    retriever = TwoPathRetriever.from_canonical([official], official_dense=_Dense([_dense_result(official)]))
+    trace = retriever.retrieve_with_trace("offer", technical=False, top_k=5)
+    assert trace["dense_available"] is True
+    assert trace["retrieval_mode"] == "HYBRID"
+    assert len(trace["results"]) == 1
+    assert trace["results"][0]["retrieval_method"] == "hybrid"
+    assert trace["results"][0]["retrieval_methods"] == ["bm25", "dense"]
+
+
+def test_dense_timeout_keeps_official_bm25_fallback_mode():
+    official = _chunk("official", "create offer guide", "official_manual", "official")
+    retriever = TwoPathRetriever.from_canonical([official], official_dense=_Dense(error=DenseUnavailable("timeout")))
+    trace = retriever.retrieve_with_trace("create offer", technical=False)
+    assert trace["dense_available"] is False
+    assert trace["fallback_used"] is True
+    assert trace["retrieval_mode"] == "BM25_FALLBACK"
 
 
 def test_dense_embedding_or_qdrant_failure_uses_official_bm25_fallback():

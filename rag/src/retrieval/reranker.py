@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 
 
 class Reranker:
@@ -9,6 +10,7 @@ class Reranker:
     def __init__(self, model_path: str | Path | None = None):
         self.model_path = Path(model_path) if model_path else None
         self._model = None
+        self.last_latency_ms = 0.0
 
     @property
     def available(self) -> bool:
@@ -26,6 +28,8 @@ class Reranker:
         model = self._load()
         if model is None:
             return documents[:top_k]
+        started = perf_counter()
         scores = model.predict([(query, document["text"]) for document in documents])
+        self.last_latency_ms = (perf_counter() - started) * 1000
         ranked = [{**document, "reranker_score": float(score), "score": float(score)} for document, score in zip(documents, scores)]
         return sorted(ranked, key=lambda item: item["score"], reverse=True)[:top_k]

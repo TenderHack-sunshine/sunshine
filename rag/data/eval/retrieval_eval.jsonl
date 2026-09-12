@@ -1,0 +1,33 @@
+{"query":"как добавить МЧД","route":"L1","expected_decision":"ANSWER","notes":"Add relevant_chunk_ids or relevant_document_ids after human review."}
+{"query":"не подписывается оферта","route":"L3","expected_decision":"ANSWER","notes":"Add one or more human-validated official/ticket identifiers."}
+{"query":"не работает","expected_decision":"NEEDS_CLARIFICATION","notes":"No retrieval label: this is a routing/clarification case."}
+{"query":"куда загрузить доверенность","expected_route":"L1","expected_decision":"ANSWER","category":"paraphrase","difficulty":"easy"}
+{"query":"как мчд привязать","expected_route":"L1","expected_decision":"ANSWER","category":"short","difficulty":"medium"}
+{"query":"как добваить мчд","expected_route":"L1","expected_decision":"ANSWER","category":"typo","difficulty":"medium"}
+{"query":"где в профиле добавить машиночитаемую доверенность","expected_route":"L1","expected_decision":"ANSWER","category":"exact","difficulty":"easy"}
+{"query":"как зарегистрироваться поставщику","expected_route":"L1","expected_decision":"ANSWER","category":"exact","difficulty":"easy"}
+{"query":"не получается войти в личный кабинет","expected_route":"L3","expected_decision":"ANSWER","category":"technical","difficulty":"medium"}
+{"query":"мчд не отображается после загрузки","expected_route":"L3","expected_decision":"ANSWER","category":"troubleshooting","difficulty":"medium"}
+{"query":"после нажатия кнопки ничего не происходит","expected_route":"L3","expected_decision":"ANSWER","category":"technical","difficulty":"hard"}
+{"query":"не могу подписать","expected_route":"L3","expected_decision":"NEEDS_CLARIFICATION","category":"ambiguous","difficulty":"hard"}
+{"query":"не подписывается оферта","expected_route":"L3","expected_decision":"ANSWER","category":"technical","difficulty":"medium"}
+{"query":"ошибка при добавлении МЧД","expected_route":"L3","expected_decision":"ANSWER","category":"troubleshooting","difficulty":"medium"}
+{"query":"не открывается котировочная сессия","expected_route":"L3","expected_decision":"ANSWER","category":"technical","difficulty":"medium"}
+{"query":"как создать оферту","expected_route":"L1","expected_decision":"ANSWER","category":"exact","difficulty":"easy"}
+{"query":"как изменить данные профиля пользователя","expected_route":"L1","expected_decision":"ANSWER","category":"exact","difficulty":"easy"}
+{"query":"где посмотреть темы обращений","expected_route":"L1","expected_decision":"ANSWER","category":"paraphrase","difficulty":"easy"}
+{"query":"какие требования к участнику закупки","expected_route":"L2","expected_decision":"ANSWER","category":"exact","difficulty":"medium"}
+{"query":"правила работы с контрактом","expected_route":"L2","expected_decision":"ANSWER","category":"paraphrase","difficulty":"medium"}
+{"query":"порядок размещения оферты","expected_route":"L2","expected_decision":"ANSWER","category":"exact","difficulty":"medium"}
+{"query":"как подписать электронный акт","expected_route":"L1","expected_decision":"ANSWER","category":"exact","difficulty":"medium"}
+{"query":"xml доверенность не загружается","expected_route":"L3","expected_decision":"ANSWER","category":"troubleshooting","difficulty":"medium"}
+{"query":"ошибка 500 на странице оферты","expected_route":"L3","expected_decision":"ANSWER","category":"technical","difficulty":"hard"}
+{"query":"браузер зависает при работе на портале","expected_route":"L3","expected_decision":"ANSWER","category":"technical","difficulty":"hard"}
+{"query":"как удалить черновик оферты","expected_route":"L1","expected_decision":"ANSWER","category":"paraphrase","difficulty":"medium"}
+{"query":"что такое упд на портале","expected_route":"L1","expected_decision":"ANSWER","category":"short","difficulty":"medium"}
+{"query":"мне нужна помощь с документами","expected_decision":"NEEDS_CLARIFICATION","category":"ambiguous","difficulty":"hard"}
+{"query":"можно ли изменить завершенную закупку","expected_route":"L2","expected_decision":"ANSWER","category":"paraphrase","difficulty":"hard"}
+{"query":"неизвестная функция портала","expected_route":"L1","expected_decision":"ESCALATE_TO_OPERATOR","category":"missing_knowledge","difficulty":"hard"}
+{"query":"как связаться с оператором","expected_route":"L1","expected_decision":"ANSWER","category":"exact","difficulty":"easy"}
+{"query":"доверенность куда","expected_route":"L1","expected_decision":"ANSWER","category":"short","difficulty":"medium"}
+{"query":"падписывается аферта с ашипкой","expected_route":"L3","expected_decision":"ANSWER","category":"typo","difficulty":"hard"}

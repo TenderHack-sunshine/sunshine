@@ -22,9 +22,7 @@ dist/
 *.egg-info/
 
 # Hackathon source data and generated artifacts (inside the RAG project)
-rag/data/raw/manuals/*
 !rag/data/raw/manuals/.gitkeep
-rag/data/raw/tickets/*
 !rag/data/raw/tickets/.gitkeep
 rag/data/raw/zakupki_kb/*
 !rag/data/raw/zakupki_kb/.gitkeep

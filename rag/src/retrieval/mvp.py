@@ -14,14 +14,17 @@ def rrf_fuse(ranked_lists: list[list[dict]], k: int = 60, weights: list[float] |
     """Fuse retriever ranks only; raw BM25 and cosine values are never compared."""
     merged: dict[str, dict] = {}
     scores: defaultdict[str, float] = defaultdict(float)
+    contributors: defaultdict[str, list[str]] = defaultdict(list)
     for list_index, results in enumerate(ranked_lists):
         weight = (weights or [1.0] * len(ranked_lists))[list_index]
         for position, result in enumerate(results, start=1):
             chunk_id = str(result["chunk_id"])
             merged[chunk_id] = result
             scores[chunk_id] += weight / (k + position)
+            contributors[chunk_id].append(str(result.get("retrieval_method", "unknown")))
     return [
-        {**merged[chunk_id], "rrf_score": score, "score": score}
+        {**merged[chunk_id], "retrieval_method": "hybrid" if len(set(contributors[chunk_id])) > 1 else merged[chunk_id].get("retrieval_method"),
+         "retrieval_methods": sorted(set(contributors[chunk_id])), "rrf_score": score, "score": score}
         for chunk_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)
     ]
 
@@ -31,13 +34,14 @@ class TwoPathRetriever:
 
     def __init__(self, official: RussianBM25Retriever, tickets: RussianBM25Retriever, official_dense=None,
                  router: TechnicalRouter | None = None, official_dense_top_k: int = 15,
-                 ticket_bm25_top_k: int = 15, final_candidates: int = 10, rrf_k: int = 60,
+                 official_bm25_top_k: int = 20, ticket_bm25_top_k: int = 15, final_candidates: int = 10, rrf_k: int = 60,
                  official_rrf_weight: float = 1.0, ticket_rrf_weight: float = 1.0):
         self.official = official
         self.tickets = tickets
         self.official_dense = official_dense
         self.router = router or TechnicalRouter()
         self.official_dense_top_k = official_dense_top_k
+        self.official_bm25_top_k = official_bm25_top_k
         self.ticket_bm25_top_k = ticket_bm25_top_k
         self.final_candidates = final_candidates
         self.rrf_k = rrf_k
@@ -59,30 +63,35 @@ class TwoPathRetriever:
         final_k = top_k or self.final_candidates
         trace = {
             "normalized_query": normalized, "route": decision, "dense_available": False, "fallback_used": False,
-            "dense_error": None, "official_dense": [], "official_fallback": [], "ticket_bm25": [],
+            "dense_error": None, "official_dense": [], "official_bm25": [], "official_fallback": [], "ticket_bm25": [], "hybrid": [],
             "fused": [], "timing": {"query_embedding_ms": 0.0, "dense_search_ms": 0.0, "bm25_ms": 0.0, "fusion_ms": 0.0},
         }
-        official: list[dict]
+        # Official lexical retrieval is always part of the active path; dense augments it.
+        started = perf_counter()
+        official_bm25 = self.official.search(normalized, top_k=self.official_bm25_top_k, filters=filters)
+        trace["timing"]["bm25_ms"] += (perf_counter() - started) * 1000
+        trace["official_bm25"] = official_bm25
+        dense: list[dict] = []
         if self.official_dense is not None:
             try:
-                official = self.official_dense.retrieve(normalized, top_k=self.official_dense_top_k, filters=filters, max_per_document=2)
-                trace["dense_available"] = True
-                trace["official_dense"] = official
+                dense = self.official_dense.retrieve(normalized, top_k=self.official_dense_top_k, filters=filters, max_per_document=2)
+                trace["dense_available"] = bool(dense)
+                trace["official_dense"] = dense
                 trace["timing"].update(getattr(self.official_dense, "last_timing", {}))
             except (DenseUnavailable, RuntimeError, ConnectionError, OSError) as error:
                 trace["dense_error"] = str(error)
                 trace["fallback_used"] = True
-                official = []
+                dense = []
         else:
             trace["fallback_used"] = True
-            official = []
-        if not official:
-            started = perf_counter()
-            official = self.official.search(normalized, top_k=self.official_dense_top_k, filters=filters)
-            trace["timing"]["bm25_ms"] += (perf_counter() - started) * 1000
-            trace["official_fallback"] = official
-
-        ranked_lists, rrf_weights = [official], [self.official_rrf_weight]
+        if not dense:
+            trace["fallback_used"] = True
+            trace["official_fallback"] = official_bm25
+        ranked_lists, rrf_weights = [official_bm25], [self.official_rrf_weight]
+        if dense:
+            ranked_lists.append(dense)
+            rrf_weights.append(self.official_rrf_weight)
+            trace["hybrid"] = rrf_fuse([official_bm25, dense], k=self.rrf_k, weights=[self.official_rrf_weight] * 2)
         if use_tickets:
             ticket_filters = dict(filters or {})
             ticket_filters["source_type"] = "support_ticket"
@@ -107,6 +116,10 @@ class TwoPathRetriever:
                 break
         trace["fused"] = fused
         trace["results"] = result
+        trace["retrieval_mode"] = "HYBRID" if dense else "BM25_FALLBACK" if self.official_dense is not None else "BM25_ONLY"
+        trace["dense_candidates"] = len(dense)
+        trace["bm25_candidates"] = len(official_bm25) + len(trace["ticket_bm25"])
+        trace["hybrid_candidates"] = len(trace["hybrid"])
         trace["timing"]["total_retrieval_ms"] = (perf_counter() - total_started) * 1000
         return trace
 
