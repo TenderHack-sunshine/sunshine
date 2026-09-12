@@ -3,31 +3,42 @@ package config
 import (
 	"errors"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	Port             string
-	DatabaseURL      string
-	AIServiceURL     string
-	AIServiceTimeout time.Duration
+	Port              string
+	DatabaseURL       string
+	RAGServiceURL     string
+	RAGServiceTimeout time.Duration
 }
 
 func Load() (Config, error) {
-	timeoutSeconds, err := strconv.Atoi(value("AI_SERVICE_TIMEOUT", "15"))
-	if err != nil || timeoutSeconds < 1 {
-		return Config{}, errors.New("AI_SERVICE_TIMEOUT must be a positive number of seconds")
+	timeout, err := parseTimeout(value("RAG_SERVICE_TIMEOUT", "30s"))
+	if err != nil {
+		return Config{}, err
 	}
-	config := Config{Port: value("PORT", "8080"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")), AIServiceURL: strings.TrimSpace(os.Getenv("AI_SERVICE_URL")), AIServiceTimeout: time.Duration(timeoutSeconds) * time.Second}
+	config := Config{Port: value("PORT", "8080"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")), RAGServiceURL: strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), RAGServiceTimeout: timeout}
 	if config.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
 	}
-	if config.AIServiceURL == "" {
-		return Config{}, errors.New("AI_SERVICE_URL is required")
+	if config.RAGServiceURL == "" {
+		return Config{}, errors.New("RAG_SERVICE_URL is required")
 	}
 	return config, nil
+}
+
+func parseTimeout(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw != "" && !strings.ContainsAny(raw, "hmsuµn") {
+		raw += "s"
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return 0, errors.New("RAG_SERVICE_TIMEOUT must be a positive duration, for example 30s")
+	}
+	return timeout, nil
 }
 
 func value(name, fallback string) string {

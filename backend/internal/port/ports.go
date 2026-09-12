@@ -6,7 +6,7 @@ import (
 	"github.com/TenderHack-sunshine/sunshine/backend/internal/domain"
 )
 
-type AIResult struct {
+type ProcessResponse struct {
 	Status                domain.AIStatus `json:"status"`
 	Answer                string          `json:"answer,omitempty"`
 	ClarificationQuestion string          `json:"clarification_question,omitempty"`
@@ -17,15 +17,14 @@ type AIResult struct {
 	Sources               []domain.Source `json:"sources,omitempty"`
 }
 
-type AIRequest struct {
-	RequestID    string           `json:"request_id"`
-	UserID       string           `json:"user_id"`
-	Message      string           `json:"message"`
-	Conversation []domain.Message `json:"conversation"`
+type ProcessRequest struct {
+	Query          string           `json:"query"`
+	ConversationID string           `json:"conversation_id,omitempty"`
+	Context        []domain.Message `json:"context,omitempty"`
 }
 
-type AIClient interface {
-	Process(ctx context.Context, request AIRequest) (AIResult, error)
+type RAGClient interface {
+	Process(ctx context.Context, request ProcessRequest) (ProcessResponse, error)
 }
 
 type Store interface {
@@ -33,8 +32,8 @@ type Store interface {
 	GetSupportRequest(ctx context.Context, requestID string) (domain.SupportRequest, error)
 	AddMessage(ctx context.Context, message domain.Message) error
 	ListMessages(ctx context.Context, requestID string) ([]domain.Message, error)
-	ApplyAIResult(ctx context.Context, requestID string, result AIResult, aiMessage *domain.Message, ticket *domain.Ticket) error
-	MarkAIFailed(ctx context.Context, requestID string) error
+	ApplyRAGResult(ctx context.Context, requestID string, result ProcessResponse, aiMessage *domain.Message, ticket *domain.Ticket) error
+	MarkRAGFailed(ctx context.Context, requestID string) error
 
 	ListTickets(ctx context.Context, status *domain.TicketStatus) ([]domain.Ticket, error)
 	GetTicket(ctx context.Context, ticketID string) (domain.Ticket, error)

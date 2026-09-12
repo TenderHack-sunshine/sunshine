@@ -1,88 +1,87 @@
-"""HTTP adapter for the Supplier Portal backend.
-
-It only exposes the existing local RAG pipeline; retrieval and answer
-generation remain in their respective modules.
-"""
+"""HTTP adapter that translates the existing RAG service into the Go contract."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
 
+from src.application.factory import build_rag_service
 from src.core.config import Settings
-from src.generation.generator import EvidenceGenerator
-from src.main import answer_question
-from src.moderation.profanity import detect_profanity
-from src.retrieval.mvp import load_two_path_retriever
 
 
 class ServiceNotReadyError(RuntimeError):
-    """Raised when local knowledge-base artifacts have not been built yet."""
+    """Raised when the RAG artifacts expected by the existing pipeline are absent."""
 
 
 @dataclass
 class RAGAPI:
-    retriever: Any
-    generator: EvidenceGenerator
+    service: Any
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RAGAPI":
-        canonical_path = settings.processed_dir / "index" / "all_chunks.jsonl"
-        if not canonical_path.exists():
-            raise ServiceNotReadyError(
-                f"Canonical corpus is missing: {canonical_path}. Run scripts/prepare_index.py first."
-            )
-        ticket_index = settings.root_dir / "data" / "indexes" / "support_tickets_bm25.pkl"
-        return cls(
-            retriever=load_two_path_retriever(canonical_path, ticket_index if ticket_index.exists() else None),
-            generator=EvidenceGenerator(settings.min_evidence_score),
-        )
+        try:
+            return cls(service=build_rag_service(settings))
+        except FileNotFoundError as error:
+            raise ServiceNotReadyError(f"RAG artifact is missing: {error.filename}") from error
 
     def process(self, payload: dict[str, Any]) -> dict[str, Any]:
-        message = str(payload.get("message", "")).strip()
-        if not message:
-            raise ValueError("message is required")
-        moderation = detect_profanity(message)
-        if moderation["contains_profanity"]:
+        query = str(payload.get("query", "")).strip()
+        if not query:
+            raise ValueError("query is required")
+        user_messages = _user_messages(payload.get("context"))
+        retrieval_query = "\n".join(dict.fromkeys([*user_messages, query]))
+        result = self.service.ask(retrieval_query)
+        sources = [_source(item) for item in result.get("sources", [])]
+        status = result.get("status")
+
+        if status == "ANSWER":
             return {
-                "status": "blocked",
-                "blocked_reason": "Обращение заблокировано из-за недопустимой лексики.",
-                "topic": "moderation",
-                "support_level": "L1",
+                "status": "answered",
+                "answer": result["answer"],
+                "support_level": result.get("route") or "L1",
+                "sources": sources,
+            }
+        if status == "NEEDS_CLARIFICATION":
+            return {
+                "status": "need_clarification",
+                "clarification_question": result["answer"],
                 "sources": [],
             }
-
-        result = answer_question(message, self.retriever, generator=self.generator)
-        route = result["route"] or {}
-        taxonomy = route.get("taxonomy") or {}
-        technical = route.get("technical") or {}
-        topic = taxonomy.get("topic") or technical.get("intent") or "unknown"
-        evidence = result.get("evidence", [])
-        if not result["used_evidence"]:
+        if status == "REJECTED_PROFANITY":
+            return {
+                "status": "blocked",
+                "blocked_reason": result["answer"],
+                "sources": [],
+            }
+        if status == "ESCALATE_TO_OPERATOR":
             return {
                 "status": "escalated",
                 "answer": result["answer"],
-                "topic": topic,
-            "support_level": "L3" if technical.get("technical") else "L2",
+                "support_level": result.get("route") or "L2",
                 "confidence": 0.0,
-                "sources": [],
+                "sources": sources,
             }
-        return {
-            "status": "answered",
-            "answer": result["answer"],
-            "topic": topic,
-            "support_level": evidence[0].get("support_level") or "L1",
-            "confidence": evidence[0].get("score", 0.0),
-            "sources": [_source(item) for item in evidence],
-        }
+        raise RuntimeError(f"unsupported RAG status: {status!r}")
+
+
+def _user_messages(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    messages = []
+    for item in value:
+        if not isinstance(item, dict) or item.get("sender_type") != "USER":
+            continue
+        text = str(item.get("text", "")).strip()
+        if text:
+            messages.append(text)
+    return messages
 
 
 def _source(item: dict[str, Any]) -> dict[str, Any]:
-    source = str(item.get("source_path") or item.get("source") or "knowledge-base")
+    document = str(item.get("source_path") or item.get("source") or item.get("document_id") or "knowledge-base")
     page = item.get("page_start") if item.get("page_start") is not None else item.get("page")
     return {
-        "document_id": str(item.get("chunk_id") or source),
-        "title": str(item.get("title") or item.get("section") or source),
-        "url": source if source.startswith(("https://", "http://")) else f"source://{quote(source)}",
+        "document": document,
+        "section": str(item.get("section") or item.get("title") or ""),
+        "chunk_id": str(item.get("chunk_id") or document),
         **({"page": page} if page is not None else {}),
     }

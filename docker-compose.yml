@@ -1,4 +1,20 @@
 services:
+  rag:
+    build:
+      context: ./rag
+      dockerfile: Dockerfile
+    environment:
+      DATA_DIR: /app/data
+    volumes:
+      - ./rag/data:/app/data:ro
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -20,7 +36,7 @@ services:
       target: migrate
     environment:
       DATABASE_URL: postgres://sunshine:sunshine@postgres:5432/sunshine?sslmode=disable
-      AI_SERVICE_URL: http://rag:8000
+      RAG_SERVICE_URL: http://rag:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,18 +49,18 @@ services:
     environment:
       PORT: "8080"
       DATABASE_URL: postgres://sunshine:sunshine@postgres:5432/sunshine?sslmode=disable
-      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://rag:8000}
-      AI_SERVICE_TIMEOUT: ${AI_SERVICE_TIMEOUT:-15}
+      RAG_SERVICE_URL: http://rag:8000
+      RAG_SERVICE_TIMEOUT: ${RAG_SERVICE_TIMEOUT:-30s}
     ports:
       - "${API_HOST_PORT:-8081}:8080"
     read_only: true
     security_opt:
       - no-new-privileges:true
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      rag:
+        condition: service_healthy
 
 volumes:
   postgres_data:

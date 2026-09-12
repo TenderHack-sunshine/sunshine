@@ -1,38 +1,49 @@
 from src.api import RAGAPI
-from src.generation.generator import EvidenceGenerator
 
 
-class Retriever:
-    def __init__(self, evidence):
-        self.evidence = evidence
+class Service:
+    def __init__(self, result):
+        self.result = result
+        self.query = None
 
-    def search(self, _query, technical=False):
-        return self.evidence
+    def ask(self, query):
+        self.query = query
+        return self.result
 
 
-def test_api_maps_existing_evidence_to_backend_contract():
-    api = RAGAPI(
-        retriever=Retriever([{
-            "chunk_id": "kb:42", "text": "Откройте раздел доверенностей.", "score": .9,
-            "source_path": "https://example.test/guide", "title": "Доверенности",
-            "page_start": 4, "authority": "official", "support_level": "L1",
-        }]),
-        generator=EvidenceGenerator(),
-    )
-
-    result = api.process({"message": "Как добавить доверенность?"})
+def test_api_maps_answer_and_sources_to_backend_contract():
+    service = Service({
+        "status": "ANSWER", "answer": "Откройте раздел доверенностей.", "route": "L1",
+        "sources": [{
+            "chunk_id": "kb:42", "source_path": "https://example.test/guide", "title": "Доверенности",
+            "page_start": 4,
+        }],
+    })
+    result = RAGAPI(service).process({"query": "Как добавить доверенность?"})
 
     assert result["status"] == "answered"
-    assert result["sources"] == [{"document_id": "kb:42", "title": "Доверенности", "url": "https://example.test/guide", "page": 4}]
+    assert result["sources"] == [{"document": "https://example.test/guide", "section": "Доверенности", "chunk_id": "kb:42", "page": 4}]
 
 
-def test_api_blocks_profanity_without_retrieval():
-    result = RAGAPI(retriever=Retriever([]), generator=EvidenceGenerator()).process({"message": "Это х*йня"})
-    assert result["status"] == "blocked"
-    assert result["sources"] == []
+def test_api_maps_existing_service_statuses():
+    cases = [
+        ("REJECTED_PROFANITY", "blocked"),
+        ("NEEDS_CLARIFICATION", "need_clarification"),
+        ("ESCALATE_TO_OPERATOR", "escalated"),
+    ]
+    for source_status, expected_status in cases:
+        result = RAGAPI(Service({"status": source_status, "answer": "message", "route": "L2", "sources": []})).process({"query": "Вопрос"})
+        assert result["status"] == expected_status
 
 
-def test_api_escalates_when_confidence_gate_has_no_evidence():
-    result = RAGAPI(retriever=Retriever([]), generator=EvidenceGenerator()).process({"message": "Нужна помощь"})
-    assert result["status"] == "escalated"
-    assert result["confidence"] == 0.0
+def test_api_passes_user_conversation_to_existing_service():
+    service = Service({"status": "NEEDS_CLARIFICATION", "answer": "Уточните", "sources": []})
+    RAGAPI(service).process({
+        "query": "Ошибка 42",
+        "context": [
+            {"sender_type": "USER", "text": "Не работает подпись"},
+            {"sender_type": "AI", "text": "Уточните"},
+            {"sender_type": "USER", "text": "Ошибка 42"},
+        ],
+    })
+    assert service.query == "Не работает подпись\nОшибка 42"

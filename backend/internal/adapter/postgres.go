@@ -62,7 +62,7 @@ func (s *PostgresStore) ListMessages(ctx context.Context, requestID string) ([]d
 	return messages, rows.Err()
 }
 
-func (s *PostgresStore) ApplyAIResult(ctx context.Context, requestID string, result port.AIResult, aiMessage *domain.Message, ticket *domain.Ticket) error {
+func (s *PostgresStore) ApplyRAGResult(ctx context.Context, requestID string, result port.ProcessResponse, aiMessage *domain.Message, ticket *domain.Ticket) error {
 	status, answer := requestStatus(result)
 	sources, err := json.Marshal(result.Sources)
 	if err != nil {
@@ -97,7 +97,7 @@ func (s *PostgresStore) ApplyAIResult(ctx context.Context, requestID string, res
 	return tx.Commit(ctx)
 }
 
-func (s *PostgresStore) MarkAIFailed(ctx context.Context, requestID string) error {
+func (s *PostgresStore) MarkRAGFailed(ctx context.Context, requestID string) error {
 	command, err := s.pool.Exec(ctx, `UPDATE support_requests SET status=$2,ai_status=$3,updated_at=NOW() WHERE id=$1`, requestID, domain.RequestStatusAIFailed, domain.AIStatusFailed)
 	if err != nil {
 		return err
@@ -211,7 +211,7 @@ func (s *PostgresStore) Analytics(ctx context.Context) (port.AnalyticsSnapshot, 
 	return result, nil
 }
 
-func requestStatus(result port.AIResult) (domain.RequestStatus, string) {
+func requestStatus(result port.ProcessResponse) (domain.RequestStatus, string) {
 	switch result.Status {
 	case domain.AIStatusAnswered:
 		return domain.RequestStatusAnswered, result.Answer

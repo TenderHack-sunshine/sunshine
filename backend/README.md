@@ -1,39 +1,38 @@
 # Supplier Portal support backend
 
-The backend owns the support workflow around the external AI module in
-`../rag`. It does not implement retrieval, models, moderation, or any other AI
-decision logic.
+The Go backend owns the support workflow, PostgreSQL, tickets, operator flow,
+feedback, and analytics. The separate Python service in `../rag` owns
+moderation, retrieval, confidence, and answer generation.
 
 ```text
-Frontend → HTTP API → SupportService → AIClient → AI result
-                                              ↓
-                    PostgreSQL ← request / messages / ticket / feedback
+Frontend → Go handler → SupportService → RAGClient → HTTP → Python RAG
+                            ↓                              ↓
+                  PostgreSQL request / messages / ticket    RAG pipeline
 ```
 
 ## Workflow
 
 1. A user creates a support request.
-2. The request and its first message are persisted before the AI call.
-3. `AIClient` returns exactly one of `answered`, `need_clarification`,
+2. The request and its first message are persisted before the RAG call.
+3. `RAGClient` returns exactly one of `answered`, `need_clarification`,
    `blocked`, or `escalated`.
 4. The backend stores the result. Escalation creates a ticket atomically with
-   the AI result.
+   the RAG result.
 5. An operator moves the ticket through `WAITING_FOR_OPERATOR → IN_PROGRESS →
    ANSWERED → CLOSED`.
 6. The user can leave a single 1–5 feedback entry per request. Analytics reads
    the same persisted records.
 
-## AI HTTP contract
+## Go ↔ Python RAG HTTP contract
 
-Set `AI_SERVICE_URL` to the RAG service. Backend sends `POST
-<AI_SERVICE_URL>/v1/process`:
+Set `RAG_SERVICE_URL` to the RAG service. Backend sends `POST
+<RAG_SERVICE_URL>/process`:
 
 ```json
 {
-  "request_id": "...",
-  "user_id": "...",
-  "message": "Электронная подпись не работает",
-  "conversation": [{"id":"...", "support_request_id":"...", "sender_type":"USER", "text":"...", "created_at":"..."}]
+  "query": "Электронная подпись не работает",
+  "conversation_id": "...",
+  "context": [{"id":"...", "support_request_id":"...", "sender_type":"USER", "text":"...", "created_at":"..."}]
 }
 ```
 
@@ -46,14 +45,14 @@ The RAG adapter must return this shape:
   "topic": "electronic_signature",
   "support_level": "L3",
   "confidence": 0.84,
-  "sources": [{"document_id":"...", "title":"...", "url":"...", "page": 4}]
+  "sources": [{"document":"...", "section":"...", "page": 4, "chunk_id":"..."}]
 }
 ```
 
 For `need_clarification`, return `clarification_question`; for `blocked`,
 return `blocked_reason`; for `escalated`, include the topic, support level,
 confidence, sources, and optionally a preliminary `answer`. An unavailable or
-invalid AI service returns a controlled `503` or `502`; it never crashes the
+invalid RAG service returns a controlled `503` or `502`; it never crashes the
 backend.
 
 ## API
@@ -86,23 +85,41 @@ Errors use one format:
 
 ## Run with Docker
 
+Compose starts PostgreSQL, the Python RAG service, applies the SQL migration
+once through a separate `migrate` job, then starts the API on host port 8081
+by default (set `API_HOST_PORT` to change it). Docker uses
+`RAG_SERVICE_URL=http://rag:8000`; local development uses
+`http://localhost:8000`.
+
+Before the first Docker run, build the local RAG artifacts in `rag/` (they are
+intentionally ignored by Git):
+
+```sh
+python scripts/prepare_index.py
+python scripts/build_ticket_bm25.py
+```
+
+The current RAG factory requires both
+`data/processed/index/all_chunks.jsonl` and
+`data/indexes/support_tickets_bm25.pkl`.
+
+Then start the complete stack:
+
 ```sh
 docker compose up --build
 ```
 
-Compose starts PostgreSQL, applies the SQL migration once through a separate
-`migrate` job, then starts the API on host port 8081 by default (set
-`API_HOST_PORT` to change it). The RAG service is external:
-set `AI_SERVICE_URL` in the environment to an address reachable **from the
-container**. For a RAG Compose service, use `http://rag:8000`; for a RAG
-service outside Docker, use its network-reachable address. A request while it
-is offline returns `AI_UNAVAILABLE` and remains stored with `ai_failed`
-status.
+Both Go and Python expose `GET /health`.
 
 ## Local development
 
-Apply migrations and run the API after setting the variables from
-`.env.example`:
+Start Python after preparing the artifacts:
+
+```sh
+cd rag && DATA_DIR="$PWD/data" python scripts/serve.py --port 8000
+```
+
+In another terminal at the repository root, apply migrations and start Go:
 
 ```sh
 set -a; . backend/.env.example; set +a
@@ -111,4 +128,13 @@ go run ./backend/cmd/api
 ```
 
 The schema is in `backend/migrations`; the API container never creates tables
-itself. `go test ./...` runs the backend flow tests.
+itself. `go test ./...` runs the backend flow and HTTP-client tests.
+
+To check the full frontend → Go → Python path after `docker compose up`, run:
+
+```sh
+curl -i http://localhost:8081/support/requests \
+  -H 'Content-Type: application/json' \
+  -H 'X-Portal-User-ID: demo-user' \
+  --data '{"message":"Не работает электронная подпись"}'
+```
