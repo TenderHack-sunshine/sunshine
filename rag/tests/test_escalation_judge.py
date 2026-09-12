@@ -1,10 +1,9 @@
 from src.application.escalation import EscalationJudge
 
 
-def test_judge_keeps_an_incomplete_turn_in_the_dialog():
+def test_judge_does_not_reinterpret_retrieval_failure_as_ambiguity():
     decision = EscalationJudge().decide("выходит ошибка", "GENERATION_NOT_GROUNDED", [{}])
-    assert decision.clarify is True
-    assert decision.reason == "MISSING_ERROR_DETAILS"
+    assert decision.clarify is False
 
 
 def test_judge_escalates_a_non_mchd_follow_up():

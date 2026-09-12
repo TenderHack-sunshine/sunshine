@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/TenderHack-sunshine/sunshine/backend/internal/domain"
 )
@@ -12,9 +13,15 @@ type ProcessResponse struct {
 	ClarificationQuestion string          `json:"clarification_question,omitempty"`
 	BlockedReason         string          `json:"blocked_reason,omitempty"`
 	Topic                 string          `json:"topic,omitempty"`
+	Subtopic              string          `json:"subtopic,omitempty"`
+	MatchedTaxonomyID     string          `json:"matched_taxonomy_id,omitempty"`
 	SupportLevel          string          `json:"support_level,omitempty"`
 	Confidence            *float64        `json:"confidence,omitempty"`
 	Sources               []domain.Source `json:"sources,omitempty"`
+	DialogState           json.RawMessage `json:"dialog_state,omitempty"`
+	ResolvedQuery         string          `json:"resolved_query,omitempty"`
+	RoutingReason         string          `json:"routing_reason,omitempty"`
+	EscalationReason      string          `json:"escalation_reason,omitempty"`
 }
 
 type ProcessRequest struct {
@@ -22,6 +29,7 @@ type ProcessRequest struct {
 	ConversationID string           `json:"conversation_id,omitempty"`
 	Context        []domain.Message `json:"context,omitempty"`
 	ModerationOnly bool             `json:"moderation_only,omitempty"`
+	DialogState    json.RawMessage  `json:"dialog_state,omitempty"`
 }
 
 type RAGClient interface {

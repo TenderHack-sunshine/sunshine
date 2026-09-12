@@ -16,6 +16,8 @@ from src.retrieval.reranker import Reranker
 from src.retrieval.canonical import read_jsonl
 from src.faq.cards import FAQStore
 from src.retrieval.index_manifest import load_manifest, manifest_matches
+from src.routing.intent import DomainLexicon
+from src.routing.ticket_router import TicketRouter
 from src.safety.profanity import build_profanity_detector
 
 
@@ -116,10 +118,11 @@ def build_rag_service(settings: Settings | None = None, *, canonical_path: str |
     # an empty store is the safe, non-blocking choice.
     canonical_chunks = list(read_jsonl(canonical_path)) if canonical_path.is_file() else []
     faq_store = FAQStore.from_jsonl(settings.faq_cards_path, canonical_chunks)
+    lexicon = DomainLexicon.from_chunks(canonical_chunks)
     return RAGService(retriever, preprocessor=QueryPreprocessor(profanity_detector), clarification_policy=clarification_policy,
                       reranker=reranker, rerank_enabled=settings.rerank_enabled,
                       confidence=ConfidenceEvaluator(settings.confidence_min_sources, settings.confidence_min_official_score,
                                                      settings.confidence_min_agreement), final_top_k=settings.final_top_k,
                       rerank_top_n=settings.hybrid_rerank_top_n, evidence_max_per_document=settings.evidence_max_per_document,
                       evidence_sufficiency=EvidenceSufficiencyChecker(enabled=settings.evidence_sufficiency_enabled), generator=generator,
-                      faq_store=faq_store)
+                      faq_store=faq_store, lexicon=lexicon, ticket_router=TicketRouter(canonical_chunks))

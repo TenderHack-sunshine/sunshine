@@ -28,7 +28,7 @@ func (s *PostgresStore) CreateSupportRequest(ctx context.Context, request domain
 	if _, err = tx.Exec(ctx, `INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`, request.UserID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO support_requests (id,user_id,original_message,status,ai_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, request.ID, request.UserID, request.OriginalMessage, request.Status, request.AIStatus, request.CreatedAt, request.UpdatedAt); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO support_requests (id,user_id,original_message,status,ai_status,dialog_state,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, request.ID, request.UserID, request.OriginalMessage, request.Status, request.AIStatus, dialogState(request.DialogState), request.CreatedAt, request.UpdatedAt); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO messages (id,support_request_id,sender_type,text,created_at) VALUES ($1,$2,$3,$4,$5)`, initial.ID, initial.RequestID, initial.Sender, initial.Text, initial.CreatedAt); err != nil {
@@ -38,7 +38,7 @@ func (s *PostgresStore) CreateSupportRequest(ctx context.Context, request domain
 }
 
 func (s *PostgresStore) GetSupportRequest(ctx context.Context, requestID string) (domain.SupportRequest, error) {
-	return scanRequest(s.pool.QueryRow(ctx, `SELECT id,user_id,original_message,status,topic,support_level,ai_status,ai_answer,confidence,ai_sources,created_at,updated_at FROM support_requests WHERE id=$1`, requestID))
+	return scanRequest(s.pool.QueryRow(ctx, `SELECT id,user_id,original_message,status,topic,support_level,ai_status,ai_answer,confidence,ai_sources,dialog_state,created_at,updated_at FROM support_requests WHERE id=$1`, requestID))
 }
 
 func (s *PostgresStore) AddMessage(ctx context.Context, message domain.Message) error {
@@ -72,6 +72,7 @@ func (s *PostgresStore) ListSupportRequests(ctx context.Context) ([]domain.Suppo
 			ai_answer,
 			confidence,
 			ai_sources,
+			dialog_state,
 			created_at,
 			updated_at
 		FROM support_requests
@@ -110,6 +111,7 @@ func (s *PostgresStore) ListSupportRequestsByUser(ctx context.Context, userID st
 			ai_answer,
 			confidence,
 			ai_sources,
+			dialog_state,
 			created_at,
 			updated_at
 		FROM support_requests
@@ -160,7 +162,7 @@ func (s *PostgresStore) ApplyRAGResult(ctx context.Context, requestID string, re
 		return err
 	}
 	defer tx.Rollback(ctx)
-	command, err := tx.Exec(ctx, `UPDATE support_requests SET status=$2,topic=$3,support_level=$4,ai_status=$5,ai_answer=$6,confidence=$7,ai_sources=$8,updated_at=NOW() WHERE id=$1`, requestID, status, result.Topic, result.SupportLevel, result.Status, answer, result.Confidence, sources)
+	command, err := tx.Exec(ctx, `UPDATE support_requests SET status=$2,topic=$3,support_level=$4,ai_status=$5,ai_answer=$6,confidence=$7,ai_sources=$8,dialog_state=$9,updated_at=NOW() WHERE id=$1`, requestID, status, result.Topic, result.SupportLevel, result.Status, answer, result.Confidence, sources, dialogState(result.DialogState))
 	if err != nil {
 		return err
 	}
@@ -177,7 +179,7 @@ func (s *PostgresStore) ApplyRAGResult(ctx context.Context, requestID string, re
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO tickets (id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, ticket.ID, ticket.UserID, ticket.SupportRequestID, ticket.Status, ticket.Topic, ticket.SupportLevel, ticket.OriginalQuery, ticket.ConversationContext, ticket.AIAnswer, ticket.AIConfidence, ticketSources, ticket.CreatedAt, ticket.UpdatedAt); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO tickets (id,user_id,support_request_id,status,topic,subtopic,matched_taxonomy_id,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,resolved_query,intent_frame,routing_reason,escalation_reason,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`, ticket.ID, ticket.UserID, ticket.SupportRequestID, ticket.Status, ticket.Topic, ticket.Subtopic, ticket.MatchedTaxonomyID, ticket.SupportLevel, ticket.OriginalQuery, ticket.ConversationContext, ticket.AIAnswer, ticket.AIConfidence, ticketSources, ticket.ResolvedQuery, dialogState(ticket.IntentFrame), ticket.RoutingReason, ticket.EscalationReason, ticket.CreatedAt, ticket.UpdatedAt); err != nil {
 			return err
 		}
 	}
@@ -196,7 +198,7 @@ func (s *PostgresStore) MarkRAGFailed(ctx context.Context, requestID string) err
 }
 
 func (s *PostgresStore) ListTickets(ctx context.Context, status *domain.TicketStatus, line *domain.SupportLine) ([]domain.Ticket, error) {
-	query := `SELECT id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at FROM tickets`
+	query := `SELECT id,user_id,support_request_id,status,topic,subtopic,matched_taxonomy_id,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,resolved_query,intent_frame,routing_reason,escalation_reason,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at FROM tickets`
 	conditions := []string{}
 	args := []any{}
 	if status != nil {
@@ -228,11 +230,11 @@ func (s *PostgresStore) ListTickets(ctx context.Context, status *domain.TicketSt
 }
 
 func (s *PostgresStore) GetTicket(ctx context.Context, ticketID string) (domain.Ticket, error) {
-	return scanTicket(s.pool.QueryRow(ctx, `SELECT id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at FROM tickets WHERE id=$1`, ticketID))
+	return scanTicket(s.pool.QueryRow(ctx, `SELECT id,user_id,support_request_id,status,topic,subtopic,matched_taxonomy_id,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,resolved_query,intent_frame,routing_reason,escalation_reason,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at FROM tickets WHERE id=$1`, ticketID))
 }
 
 func (s *PostgresStore) TakeTicket(ctx context.Context, ticketID, operatorID string) (domain.Ticket, error) {
-	return s.updateTicket(ctx, ticketID, `UPDATE tickets SET status=$2,operator_id=$3,taken_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$4 RETURNING id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, domain.TicketStatusInProgress, operatorID, domain.TicketStatusWaitingForOperator)
+	return s.updateTicket(ctx, ticketID, `UPDATE tickets SET status=$2,operator_id=$3,taken_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$4 RETURNING id,user_id,support_request_id,status,topic,subtopic,matched_taxonomy_id,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,resolved_query,intent_frame,routing_reason,escalation_reason,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, domain.TicketStatusInProgress, operatorID, domain.TicketStatusWaitingForOperator)
 }
 
 func (s *PostgresStore) AnswerTicket(ctx context.Context, ticketID, operatorID, answer string, message domain.Message) (domain.Ticket, error) {
@@ -241,7 +243,7 @@ func (s *PostgresStore) AnswerTicket(ctx context.Context, ticketID, operatorID, 
 		return domain.Ticket{}, err
 	}
 	defer tx.Rollback(ctx)
-	ticket, err := scanTicket(tx.QueryRow(ctx, `UPDATE tickets SET status=$2,operator_answer=$3,answered_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$4 AND operator_id=$5 RETURNING id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, ticketID, domain.TicketStatusAnswered, answer, domain.TicketStatusInProgress, operatorID))
+	ticket, err := scanTicket(tx.QueryRow(ctx, `UPDATE tickets SET status=$2,operator_answer=$3,answered_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$4 AND operator_id=$5 RETURNING id,user_id,support_request_id,status,topic,subtopic,matched_taxonomy_id,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,resolved_query,intent_frame,routing_reason,escalation_reason,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, ticketID, domain.TicketStatusAnswered, answer, domain.TicketStatusInProgress, operatorID))
 	if err != nil {
 		return domain.Ticket{}, s.ticketMutationError(ctx, ticketID, err)
 	}
@@ -256,7 +258,7 @@ func (s *PostgresStore) AnswerTicket(ctx context.Context, ticketID, operatorID, 
 }
 
 func (s *PostgresStore) CloseTicket(ctx context.Context, ticketID, operatorID string) (domain.Ticket, error) {
-	return s.updateTicket(ctx, ticketID, `UPDATE tickets SET status=$2,closed_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$3 AND operator_id=$4 RETURNING id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, domain.TicketStatusClosed, domain.TicketStatusAnswered, operatorID)
+	return s.updateTicket(ctx, ticketID, `UPDATE tickets SET status=$2,closed_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$3 AND operator_id=$4 RETURNING id,user_id,support_request_id,status,topic,subtopic,matched_taxonomy_id,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,resolved_query,intent_frame,routing_reason,escalation_reason,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, domain.TicketStatusClosed, domain.TicketStatusAnswered, operatorID)
 }
 
 func (s *PostgresStore) updateTicket(ctx context.Context, ticketID, query string, args ...any) (domain.Ticket, error) {
@@ -447,6 +449,10 @@ func requestStatus(result port.ProcessResponse) (domain.RequestStatus, string) {
 		return domain.RequestStatusNeedClarification, result.ClarificationQuestion
 	case domain.AIStatusBlocked:
 		return domain.RequestStatusBlocked, result.BlockedReason
+	case domain.AIStatusOfferHandoff:
+		return domain.RequestStatusOfferHandoff, result.Answer
+	case domain.AIStatusEscalateConfirmed:
+		return domain.RequestStatusEscalated, result.Answer
 	case domain.AIStatusEscalated:
 		return domain.RequestStatusEscalated, result.Answer
 	default:
@@ -478,10 +484,17 @@ func (s *PostgresStore) ticketMutationError(ctx context.Context, ticketID string
 	}
 	return application.ErrInvalidState
 }
+func dialogState(value json.RawMessage) []byte {
+	if len(value) == 0 {
+		return []byte("{}")
+	}
+	return value
+}
+
 func scanRequest(row pgx.Row) (domain.SupportRequest, error) {
 	var r domain.SupportRequest
-	var raw []byte
-	err := row.Scan(&r.ID, &r.UserID, &r.OriginalMessage, &r.Status, &r.Topic, &r.SupportLevel, &r.AIStatus, &r.AIAnswer, &r.Confidence, &raw, &r.CreatedAt, &r.UpdatedAt)
+	var raw, state []byte
+	err := row.Scan(&r.ID, &r.UserID, &r.OriginalMessage, &r.Status, &r.Topic, &r.SupportLevel, &r.AIStatus, &r.AIAnswer, &r.Confidence, &raw, &state, &r.CreatedAt, &r.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, application.ErrNotFound
 	}
@@ -491,12 +504,13 @@ func scanRequest(row pgx.Row) (domain.SupportRequest, error) {
 	if err := json.Unmarshal(raw, &r.Sources); err != nil {
 		return r, fmt.Errorf("decode request sources: %w", err)
 	}
+	r.DialogState = state
 	return r, nil
 }
 func scanTicket(row pgx.Row) (domain.Ticket, error) {
 	var t domain.Ticket
-	var raw []byte
-	err := row.Scan(&t.ID, &t.UserID, &t.SupportRequestID, &t.Status, &t.Topic, &t.SupportLevel, &t.OriginalQuery, &t.ConversationContext, &t.AIAnswer, &t.AIConfidence, &raw, &t.OperatorID, &t.OperatorAnswer, &t.CreatedAt, &t.UpdatedAt, &t.TakenAt, &t.AnsweredAt, &t.ClosedAt)
+	var raw, intent []byte
+	err := row.Scan(&t.ID, &t.UserID, &t.SupportRequestID, &t.Status, &t.Topic, &t.Subtopic, &t.MatchedTaxonomyID, &t.SupportLevel, &t.OriginalQuery, &t.ConversationContext, &t.AIAnswer, &t.AIConfidence, &raw, &t.ResolvedQuery, &intent, &t.RoutingReason, &t.EscalationReason, &t.OperatorID, &t.OperatorAnswer, &t.CreatedAt, &t.UpdatedAt, &t.TakenAt, &t.AnsweredAt, &t.ClosedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return t, application.ErrNotFound
 	}
@@ -506,5 +520,6 @@ func scanTicket(row pgx.Row) (domain.Ticket, error) {
 	if err := json.Unmarshal(raw, &t.AISources); err != nil {
 		return t, fmt.Errorf("decode ticket sources: %w", err)
 	}
+	t.IntentFrame = intent
 	return t, nil
 }

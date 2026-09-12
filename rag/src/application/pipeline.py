@@ -8,12 +8,14 @@ from src.generation.generator import EvidenceGenerator, ExtractiveGenerator
 from src.generation.grounding import validate_grounding
 from src.generation.qwen import GenerationError, InvalidGeneration
 from src.generation.qwen import select_generation_evidence
-from src.application.clarification import ClarificationPolicy, ConfidenceSignals
+from src.application.clarification import ClarificationPolicy, ConfidenceSignals, clarification_question
 from src.application.escalation import EscalationJudge
+from src.application.evidence_frames import compatibility, frame_evidence
 from src.application.evidence import compact_evidence, tagged_context
 from src.application.evidence_sufficiency import EvidenceSufficiencyChecker
 from src.application.knowledge_gap import knowledge_gap
 from src.routing.normalization import normalize_query
+from src.routing.intent import DomainLexicon, extract_intent_frame
 from src.routing.technical import TechnicalRouter
 from src.safety.profanity import ProfanityDetector, RuleProfanityDetector
 
@@ -21,19 +23,6 @@ from src.safety.profanity import ProfanityDetector, RuleProfanityDetector
 PROFANITY_MESSAGE = "Понимаю, что ситуация может быть неприятной. Пожалуйста, переформулируйте вопрос без нецензурной лексики — я постараюсь помочь."
 CLARIFICATION_MESSAGE = "Пожалуйста, уточните, что именно вы хотите сделать или что не работает. Если есть ошибка, пришлите её текст и укажите этап, на котором она возникает."
 OPERATOR_MESSAGE = "К сожалению, я пока не могу дать надёжный ответ по этой ситуации. Передаю обращение специалисту технической поддержки, чтобы вам помогли точнее."
-
-
-def clarification_message(query: str, reason: str | None = None) -> str:
-    normalized = query.casefold()
-    if reason == "MISSING_ERROR_DETAILS" and "загруз" in normalized and "файл" in normalized:
-        return "Укажите, какой файл вы загружаете (YML, XML или вложение), точный текст ошибки и этап загрузки. По этой информации можно выбрать корректное решение."
-    if reason == "MISSING_ERROR_DETAILS":
-        return "Пришлите точный текст ошибки и укажите, на каком шаге она появляется. Без этого нельзя надёжно определить причину."
-    if reason in {"MISSING_SUBJECT_OR_STAGE", "MISSING_REFERENT"}:
-        return "Уточните, пожалуйста, что именно не работает, с каким объектом и на каком шаге. Если есть ошибка, пришлите её точный текст."
-    if reason == "MISSING_ACTION" and ("мчд" in normalized or "доверенност" in normalized):
-        return "Пожалуйста, уточните, что именно вы хотите сделать с МЧД: добавить, заменить, отозвать или подписать документ? Если появилась ошибка, пришлите её текст."
-    return CLARIFICATION_MESSAGE
 
 
 @dataclass(frozen=True)
@@ -149,7 +138,7 @@ class RAGService:
                  generator=None, confidence: ConfidenceEvaluator | None = None, final_top_k: int = 5, rerank_top_n: int = 20,
                  evidence_max_per_document: int = 2, clarification_policy: ClarificationPolicy | None = None,
                  evidence_sufficiency: EvidenceSufficiencyChecker | None = None, faq_store=None,
-                 escalation_judge: EscalationJudge | None = None):
+                 escalation_judge: EscalationJudge | None = None, lexicon: DomainLexicon | None = None, ticket_router=None):
         self.retriever = retriever
         self.preprocessor = preprocessor or QueryPreprocessor()
         self.router = router or SupportRouter()
@@ -166,6 +155,8 @@ class RAGService:
         self.rerank_top_n = rerank_top_n
         self.evidence_max_per_document = evidence_max_per_document
         self.faq_store = faq_store
+        self.lexicon = lexicon or DomainLexicon()
+        self.ticket_router = ticket_router
 
     def _generation_diagnostics(self, *, invoked: bool = False, **extra) -> dict:
         value = {"backend": getattr(self.generator, "backend", "extractive"), "invoked": invoked,
@@ -220,22 +211,15 @@ class RAGService:
                                     "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         normalized = prepared["normalized_query"]
         assert normalized is not None
-        if self.context.needs_clarification(normalized):
-            return {**base, "status": "NEEDS_CLARIFICATION", "route": None, "answer": clarification_message(query),
-                    "diagnostics": {"profanity_backend": prepared["moderation"]["backend"], "profanity_detected": False, "profanity_probability": prepared["moderation"]["probability"], "profanity_threshold": prepared["moderation"]["threshold"], "profanity_latency_ms": prepared["moderation"]["latency_ms"], "dense_available": False, "fallback_used": False, "retrieval_mode": "NONE", "dense_candidates": 0, "bm25_candidates": 0, "retrieved_count": 0, "reranker_used": False,
-                                    "retrieval_strategy": "NONE", "dense_primary_used": False, "bm25_rescue_used": False, "bm25_fallback_used": False,
-                                    "clarification_policy_triggered": False, "clarification_reason": "NONE",
-                                    "generation": self._generation_diagnostics(),
-                                    "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         route = self.router.classify(normalized)
-        clarification = self.clarification_policy.evaluate(
-            normalized, route["route"], ConfidenceSignals(),
-        )
-        if clarification.triggered:
-            return {**base, "status": "NEEDS_CLARIFICATION", "route": route["route"], "answer": clarification_message(query, clarification.reason),
+        intent_frame = extract_intent_frame(query, self.lexicon)
+        clarification = self.clarification_policy.evaluate(intent_frame, route["route"], ConfidenceSignals()) if self.lexicon.objects else None
+        if clarification is not None and clarification.triggered:
+            return {**base, "status": "NEEDS_CLARIFICATION", "route": route["route"], "answer": clarification_question(intent_frame),
                     "diagnostics": {"profanity_backend": prepared["moderation"]["backend"], "profanity_detected": False, "profanity_probability": prepared["moderation"]["probability"], "profanity_threshold": prepared["moderation"]["threshold"], "profanity_latency_ms": prepared["moderation"]["latency_ms"], "dense_available": False, "fallback_used": False, "retrieval_mode": "NONE", "dense_candidates": 0, "bm25_candidates": 0, "retrieved_count": 0, "reranker_used": False,
                                     "retrieval_strategy": "NONE", "dense_primary_used": False, "bm25_rescue_used": False, "bm25_fallback_used": False,
                                     "clarification_policy_triggered": True, "clarification_reason": clarification.reason,
+                                    "intent_frame": intent_frame.to_dict(),
                                     "generation": self._generation_diagnostics(),
                                     "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         if self.faq_store is not None:
@@ -249,6 +233,15 @@ class RAGService:
                                         "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         trace = self.retriever.retrieve_with_trace(normalized, technical=route["technical"])
         candidates = trace["results"]
+        compatible, incompatible = [], []
+        for candidate in candidates:
+            is_compatible, compatibility_reason = compatibility(intent_frame, frame_evidence(candidate, self.lexicon))
+            (compatible if is_compatible else incompatible).append({**candidate, "compatibility_reason": compatibility_reason})
+        # Compatibility may only remove candidates when intent extraction had
+        # a corpus-derived object/action. Otherwise retain retrieval recall.
+        if self.lexicon.objects and (intent_frame.object or intent_frame.action):
+            candidates = compatible
+        trace["incompatible_candidates"] = incompatible
         reranker_used = False
         reranker_available = bool(getattr(self.reranker, "available", self.rerank_enabled))
         if self.rerank_enabled and reranker_available:
@@ -305,7 +298,7 @@ class RAGService:
         judge = self.escalation_judge.decide(normalized, reason, candidates) if status == "ESCALATE_TO_OPERATOR" else None
         if judge is not None and judge.clarify:
             status, reason = "NEEDS_CLARIFICATION", judge.reason
-            generated = {"answer": clarification_message(query, judge.reason), "used_evidence": False}
+            generated = {"answer": clarification_question(intent_frame), "used_evidence": False}
         sources = [{key: item.get(key) for key in ("chunk_id", "document_id", "source_type", "authority", "source_path", "title", "section", "page_start", "page_end", "retrieval_method", "raw_score", "rrf_score", "metadata")} for item in generation_evidence]
         timings = dict(trace.get("timing", {}))
         timings["generation_ms"] = (perf_counter() - generation_started) * 1000
@@ -328,6 +321,8 @@ class RAGService:
                                 "reranker_availability_reason": getattr(self.reranker, "availability_reason", "AVAILABLE" if reranker_available else "UNAVAILABLE"),
                                 "reranker_candidates": min(len(trace["results"]), self.rerank_top_n) if self.rerank_enabled else 0,
                                 "confidence": features, "confidence_reason": reason, "knowledge_gap": gap,
+                                "intent_frame": intent_frame.to_dict(),
+                                "incompatible_candidate_count": len(trace.get("incompatible_candidates", [])),
                                 "evidence_sufficiency": {"enabled": self.evidence_sufficiency.enabled, "sufficient": sufficiency.sufficient,
                                                          "reason": sufficiency.reason, "required_terms": list(sufficiency.required_terms),
                                                          "missing_terms": list(sufficiency.missing_terms)},

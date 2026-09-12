@@ -47,6 +47,7 @@ class QwenGenerationClient:
 
     def __init__(self, host: str, port: int, timeout_seconds: float = 12, model: str = "qwen3:1.7b"):
         self.host, self.port, self.timeout_seconds, self.model = host, port, timeout_seconds, model
+        self.schema_enforced = True
 
     def _request(self, method: str, path: str, payload: dict | None = None, *, timeout: float | None = None) -> dict:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
@@ -91,9 +92,10 @@ class QwenGenerationClient:
             ],
             # The UI has a strict interactive latency budget.  A bounded
             # context also prevents a local CPU model from exhausting RAM.
-            "options": {"temperature": 0.15, "top_p": 0.9, "num_predict": max_new_tokens, "num_ctx": 4096},
+            "options": {"temperature": 0.0, "top_p": 0.8, "top_k": 20, "num_predict": max_new_tokens, "num_ctx": 4096},
             "think": False,
             "stream": False,
+            "format": GENERATION_SCHEMA,
             # Keep the already loaded local model resident between support
             # requests.  This avoids spending most of the one-minute budget on
             # a repeat model load.
@@ -128,6 +130,19 @@ SYSTEM_PROMPT = """Ты — помощник Портала поставщико
 Если в источнике для ошибки есть и причина, и действие, дай их как минимум в двух полных предложениях:
 сначала причина, затем конкретный следующий шаг.
 Если в фрагментах нет нужной информации, ответь только: НЕДОСТАТОЧНО_ДАННЫХ."""
+
+
+GENERATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer_type": {"type": "string", "enum": ["definition", "how_to", "troubleshooting", "rules", "navigation"]},
+        "answer": {"type": "string"},
+        "used_chunk_ids": {"type": "array", "items": {"type": "string"}},
+        "supported": {"type": "boolean"},
+    },
+    "required": ["answer_type", "answer", "used_chunk_ids", "supported"],
+    "additionalProperties": False,
+}
 
 
 def clean_generated_answer(text: str) -> str:
@@ -234,7 +249,7 @@ class QwenGenerator:
             prompt = build_grounded_prompt(query, selected)
             response = self.client.generate(prompt, self.max_new_tokens, self.max_seconds)
             retry_attempted = False
-            answer = clean_generated_answer(response.text)
+            answer, used_chunk_ids = self._structured_answer(response.text, selected, require_schema=bool(getattr(self.client, "schema_enforced", False)))
             invalid_reason = self._invalid_reason(answer, response.generated_tokens, self.max_new_tokens,
                                                   response.truncated, response.finish_reason)
             # The model can have correct grounded evidence but reach the output
@@ -251,7 +266,7 @@ class QwenGenerator:
                     raise InvalidGeneration(invalid_reason, response.text,
                                             self._diagnostics(response, selected, prompt, retry_attempted))
                 response = self.client.generate(prompt, retry_budget, remaining_seconds)
-                answer = clean_generated_answer(response.text)
+                answer, used_chunk_ids = self._structured_answer(response.text, selected, require_schema=bool(getattr(self.client, "schema_enforced", False)))
                 invalid_reason = self._invalid_reason(answer, response.generated_tokens, retry_budget,
                                                       response.truncated, response.finish_reason)
             generation = self._diagnostics(response, selected, prompt, retry_attempted)
@@ -259,7 +274,7 @@ class QwenGenerator:
                 raise InvalidGeneration(invalid_reason, response.text, generation)
             if answer == "НЕДОСТАТОЧНО_ДАННЫХ":
                 raise GenerationError("model indicated insufficient evidence")
-            return {"answer": answer, "used_evidence": True, "generation": generation}
+            return {"answer": answer, "used_evidence": True, "used_chunk_ids": used_chunk_ids, "generation": generation}
         except GenerationError:
             if not self.allow_extractive_fallback:
                 raise
@@ -291,6 +306,26 @@ class QwenGenerator:
                 "max_seconds": self.max_seconds, "truncated": response.truncated,
                 "finish_reason": response.finish_reason,
                 "retry_attempted": retry_attempted, "retry_count": int(retry_attempted)}
+
+    @staticmethod
+    def _structured_answer(raw: str, selected: list[dict], *, require_schema: bool = False) -> tuple[str, list[str]]:
+        """Validate the local JSON Schema response and evidence references."""
+        value = raw.strip()
+        if not value.startswith("{"):
+            if require_schema:
+                raise InvalidGeneration("missing_structured_output", raw)
+            return clean_generated_answer(value), [str(item.get("chunk_id")) for item in selected if item.get("chunk_id")]
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise InvalidGeneration("invalid_structured_output", raw) from error
+        if not isinstance(decoded, dict) or decoded.get("supported") is not True or not isinstance(decoded.get("answer"), str):
+            raise InvalidGeneration("unsupported_structured_output", raw)
+        allowed = {str(item.get("chunk_id")) for item in selected if item.get("chunk_id")}
+        used = decoded.get("used_chunk_ids")
+        if not isinstance(used, list) or not used or any(not isinstance(item, str) or item not in allowed for item in used):
+            raise InvalidGeneration("invalid_used_chunk_ids", raw)
+        return clean_generated_answer(decoded["answer"]), used
 
     @staticmethod
     def _invalid_reason(text: str, generated_tokens: int | None = None, max_new_tokens: int | None = None,

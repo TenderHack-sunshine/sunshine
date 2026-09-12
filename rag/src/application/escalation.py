@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.application.clarification import ClarificationPolicy
 
 
 @dataclass(frozen=True)
@@ -22,8 +21,8 @@ class EscalationJudge:
     """
 
     def decide(self, query: str, reason: str | None, candidates: list[dict]) -> EscalationDecision:
-        del reason, candidates
-        clarification_reason = ClarificationPolicy.reason_for(query)
-        if clarification_reason:
-            return EscalationDecision(True, clarification_reason)
+        # Missing slots are handled before retrieval by IntentFrame. A failed
+        # retrieval is not evidence of ambiguity and must follow the handoff
+        # state machine rather than inventing another clarification here.
+        del query, reason, candidates
         return EscalationDecision(False)

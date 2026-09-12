@@ -511,6 +511,7 @@ type supportResponse struct {
 	Answer                string               `json:"answer,omitempty"`
 	ClarificationQuestion string               `json:"clarification_question,omitempty"`
 	Topic                 string               `json:"topic,omitempty"`
+	Subtopic              string               `json:"subtopic,omitempty"`
 	SupportLevel          string               `json:"support_level,omitempty"`
 	Confidence            *float64             `json:"confidence,omitempty"`
 	Sources               []domain.Source      `json:"sources"`
@@ -519,7 +520,7 @@ type supportResponse struct {
 	TicketStatus          string               `json:"ticket_status,omitempty"`
 }
 
-func userResponse(request domain.SupportRequest, ticket *domain.Ticket) supportResponse {
+func legacyUserResponse(request domain.SupportRequest, ticket *domain.Ticket) supportResponse {
 	response := supportResponse{Status: request.Status, RequestID: request.ID, Topic: request.Topic, SupportLevel: request.SupportLevel, Confidence: request.Confidence, Sources: request.Sources}
 	switch request.Status {
 	case domain.RequestStatusAnswered:
@@ -534,6 +535,32 @@ func userResponse(request domain.SupportRequest, ticket *domain.Ticket) supportR
 		}
 		response.Support = request.AIAnswer
 		response.TicketStatus = "Ожидает специалиста"
+	}
+	return response
+}
+
+func userResponse(request domain.SupportRequest, ticket *domain.Ticket) supportResponse {
+	response := supportResponse{
+		Status: request.Status, RequestID: request.ID, Topic: request.Topic,
+		SupportLevel: request.SupportLevel, Confidence: request.Confidence, Sources: request.Sources,
+	}
+	switch request.Status {
+	case domain.RequestStatusAnswered, domain.RequestStatusBlocked:
+		response.Answer = request.AIAnswer
+	case domain.RequestStatusNeedClarification:
+		response.ClarificationQuestion = request.AIAnswer
+	case domain.RequestStatusOfferHandoff:
+		response.Support = request.AIAnswer
+	case domain.RequestStatusEscalated:
+		response.Support = request.AIAnswer
+		response.TicketStatus = "WAITING_FOR_OPERATOR"
+		if ticket != nil {
+			response.TicketID = ticket.ID
+			response.TicketStatus = string(ticket.Status)
+			response.Topic = ticket.Topic
+			response.Subtopic = ticket.Subtopic
+			response.SupportLevel = ticket.SupportLevel
+		}
 	}
 	return response
 }

@@ -48,7 +48,7 @@ func (c *Client) Process(ctx context.Context, input port.ProcessRequest) (port.P
 		return port.ProcessResponse{}, fmt.Errorf("decode RAG response: %w", err)
 	}
 	switch result.Status {
-	case domain.AIStatusAnswered, domain.AIStatusNeedClarification, domain.AIStatusBlocked, domain.AIStatusEscalated:
+	case domain.AIStatusAnswered, domain.AIStatusNeedClarification, domain.AIStatusBlocked, domain.AIStatusOfferHandoff, domain.AIStatusEscalateConfirmed, domain.AIStatusEscalated:
 		return result, nil
 	default:
 		return port.ProcessResponse{}, fmt.Errorf("unknown RAG status %q", result.Status)

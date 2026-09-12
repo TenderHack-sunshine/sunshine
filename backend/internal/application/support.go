@@ -57,7 +57,7 @@ func (s *SupportService) AddUserMessage(ctx context.Context, actor Actor, reques
 		return domain.SupportRequest{}, nil, err
 	}
 	switch request.Status {
-	case domain.RequestStatusAnswered, domain.RequestStatusBlocked, domain.RequestStatusNeedClarification, domain.RequestStatusAIFailed, domain.RequestStatusEscalated:
+	case domain.RequestStatusAnswered, domain.RequestStatusBlocked, domain.RequestStatusNeedClarification, domain.RequestStatusOfferHandoff, domain.RequestStatusAIFailed, domain.RequestStatusEscalated:
 		// A dialog remains open for follow-up questions after an answer,
 		// an insufficient answer, a clarification request, or escalation.
 	default:
@@ -148,7 +148,7 @@ func (s *SupportService) ownedRequest(ctx context.Context, actor Actor, requestI
 
 func (s *SupportService) process(ctx context.Context, request domain.SupportRequest, conversation []domain.Message) (domain.SupportRequest, *domain.Ticket, error) {
 	last := conversation[len(conversation)-1]
-	result, err := s.rag.Process(ctx, port.ProcessRequest{Query: last.Text, ConversationID: request.ID, Context: conversation})
+	result, err := s.rag.Process(ctx, port.ProcessRequest{Query: last.Text, ConversationID: request.ID, Context: conversation, DialogState: request.DialogState})
 	if err != nil {
 		slog.Error("RAG processing failed", "support_request_id", request.ID, "user_id", request.UserID, "error", err)
 		_ = s.store.MarkRAGFailed(ctx, request.ID)
@@ -179,7 +179,9 @@ func (s *SupportService) resultArtifacts(request domain.SupportRequest, conversa
 		messageText = strings.TrimSpace(result.ClarificationQuestion)
 	case domain.AIStatusBlocked:
 		messageText = strings.TrimSpace(result.BlockedReason)
-	case domain.AIStatusEscalated:
+	case domain.AIStatusOfferHandoff:
+		messageText = strings.TrimSpace(result.Answer)
+	case domain.AIStatusEscalateConfirmed, domain.AIStatusEscalated:
 		messageText = strings.TrimSpace(result.Answer)
 		if messageText == "" {
 			messageText = "К сожалению, ответ требует участия специалиста. Я передал обращение в техническую поддержку."
@@ -195,14 +197,14 @@ func (s *SupportService) resultArtifacts(request domain.SupportRequest, conversa
 		return nil, nil, err
 	}
 	aiMessage := &domain.Message{ID: messageID, RequestID: request.ID, Sender: domain.SenderAI, Text: messageText, CreatedAt: now}
-	if result.Status != domain.AIStatusEscalated {
+	if result.Status != domain.AIStatusEscalateConfirmed && result.Status != domain.AIStatusEscalated {
 		return aiMessage, nil, nil
 	}
 	ticketID, err := s.newID()
 	if err != nil {
 		return nil, nil, err
 	}
-	ticket := &domain.Ticket{ID: ticketID, UserID: request.UserID, SupportRequestID: request.ID, Status: domain.TicketStatusWaitingForOperator, Topic: result.Topic, SupportLevel: result.SupportLevel, OriginalQuery: request.OriginalMessage, ConversationContext: conversationText(conversation), AIAnswer: result.Answer, AIConfidence: result.Confidence, AISources: result.Sources, CreatedAt: now, UpdatedAt: now}
+	ticket := &domain.Ticket{ID: ticketID, UserID: request.UserID, SupportRequestID: request.ID, Status: domain.TicketStatusWaitingForOperator, Topic: result.Topic, Subtopic: result.Subtopic, MatchedTaxonomyID: result.MatchedTaxonomyID, SupportLevel: result.SupportLevel, OriginalQuery: request.OriginalMessage, ConversationContext: conversationText(conversation), AIAnswer: result.Answer, AIConfidence: result.Confidence, AISources: result.Sources, ResolvedQuery: result.ResolvedQuery, IntentFrame: result.DialogState, RoutingReason: result.RoutingReason, EscalationReason: result.EscalationReason, CreatedAt: now, UpdatedAt: now}
 	return aiMessage, ticket, nil
 }
 

@@ -58,7 +58,8 @@ def test_clean_rule_result_continues_to_normal_pipeline():
     detector, context, router, retriever, generator = FakeDetector(False), SpyContext(), SpyRouter(), SpyRetriever(), SpyGenerator()
     result = RAGService(retriever, preprocessor=QueryPreprocessor(detector), context=context, router=router, generator=generator).ask("clean query")
     assert result["status"] == "ANSWER"
-    assert detector.calls == context.calls == router.calls == retriever.calls == generator.calls == 1
+    assert detector.calls == router.calls == retriever.calls == generator.calls == 1
+    assert context.calls == 0
     assert result["diagnostics"]["profanity_backend"] == "rule"
     assert result["diagnostics"]["profanity_detected"] is False
 

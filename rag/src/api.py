@@ -1,12 +1,13 @@
-"""HTTP adapter that translates the existing RAG service into the Go contract."""
+"""HTTP adapter between the Go API and the local RAG service."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
+from src.application.dialog_state import DialogState, update_dialog_state
 from src.application.factory import build_rag_service
 from src.core.config import Settings
-from src.moderation.profanity import detect_profanity
+from src.routing.intent import DomainLexicon, extract_intent_frame
 
 
 class ServiceNotReadyError(RuntimeError):
@@ -32,84 +33,53 @@ class RAGAPI:
             prepared = self.service.preprocessor.process(query)
             if prepared["moderation"]["contains_profanity"]:
                 return {"status": "blocked", "blocked_reason": self.service.ask(query)["answer"], "sources": []}
-            # The backend uses this endpoint solely to decide whether it may
-            # append a message to an operator ticket.  Do not retrieve or
-            # generate an answer for clean follow-ups.
             return {"status": "answered", "answer": "", "sources": []}
-        result = self.service.ask(_contextual_query(query, payload.get("context")))
-        sources = [_source(item) for item in result.get("sources", [])]
-        topic = _topic(result.get("sources", []))
-        status = result.get("status")
 
+        # Persisted state stores only confirmed slots.  Full history is not
+        # concatenated into a retrieval or generation prompt.
+        previous = DialogState.from_dict(payload.get("dialog_state"))
+        frame = extract_intent_frame(query, getattr(self.service, "lexicon", DomainLexicon()))
+        state = update_dialog_state(previous, frame, query)
+        if frame.intent == "human_request":
+            return _response("escalate_confirmed", state, answer="Передаю обращение сотруднику поддержки по вашей просьбе.", escalation_reason="direct_human_request", **_ticket_route(self.service, frame, state.resolved_query))
+        if previous.handoff_offered and _is_handoff_confirmation(query):
+            return _response("escalate_confirmed", state, answer="Передаю обращение сотруднику поддержки.", escalation_reason="handoff_confirmed", **_ticket_route(self.service, frame, state.resolved_query))
+
+        result = self.service.ask(state.resolved_query)
+        sources = [_source(item) for item in result.get("sources", [])]
+        status = result.get("status")
         if status == "ANSWER":
-            return {
-                "status": "answered",
-                "answer": result["answer"],
-                "support_level": result.get("route") or "L1",
-                "sources": sources,
-                **({"topic": topic} if topic else {}),
-            }
+            return _response("answered", state, answer=result["answer"], support_level=result.get("route") or "L1", sources=sources)
         if status == "NEEDS_CLARIFICATION":
-            return {
-                "status": "need_clarification",
-                "clarification_question": result["answer"],
-                "sources": [],
-            }
+            if state.clarification_count >= 2:
+                offered = DialogState(**{**state.to_dict(), "handoff_offered": True})
+                return _response("offer_handoff", offered, answer="Мне пока не хватает данных для надёжного ответа. Передать обращение сотруднику поддержки?", escalation_reason="clarification_limit")
+            return _response("need_clarification", state, clarification_question=result["answer"], sources=[])
         if status in {"REFUSE_PROFANITY", "REJECTED_PROFANITY"}:
-            return {
-                "status": "blocked",
-                "blocked_reason": result["answer"],
-                "sources": [],
-            }
+            return _response("blocked", state, blocked_reason=result["answer"], sources=[])
         if status == "ESCALATE_TO_OPERATOR":
-            return {
-                "status": "escalated",
-                "answer": result["answer"],
-                "support_level": result.get("route") or "L2",
-                "confidence": 0.0,
-                "sources": sources,
-                **({"topic": topic} if topic else {}),
-            }
+            offered = DialogState(**{**state.to_dict(), "handoff_offered": True})
+            return _response("offer_handoff", offered, answer="Не нашёл достаточно подтверждённой информации. Передать обращение сотруднику поддержки?", support_level=result.get("route") or "L2", sources=sources, escalation_reason=result.get("diagnostics", {}).get("confidence_reason", "insufficient_evidence"))
         raise RuntimeError(f"unsupported RAG status: {status!r}")
 
 
-def _contextual_query(query: str, context: Any) -> str:
-    """Attach one safe prior user topic only for a short follow-up.
+def _is_handoff_confirmation(query: str) -> bool:
+    return " ".join(query.casefold().split()) in {"да", "подтверждаю", "передавайте", "передать", "хочу", "согласен"}
 
-    The current message remains the only message that is moderated as a new
-    input.  Profane history is never copied into the query, which fixes the
-    earlier poisoned-conversation bug while preserving context for requests
-    such as "а точнее" or "добавить" after a question about МЧД.
-    """
-    normalized = " ".join(query.casefold().split())
-    tokens = normalized.split()
-    explicit_follow_up = (
-        normalized in {"а точнее", "точнее", "подробнее", "детальнее", "как это", "а если", "а дальше"}
-        or (len(tokens) <= 2 and any(token in {"добавить", "заменить", "отозвать", "подписать", "загрузить", "да"} for token in tokens))
-    )
-    # A short status report ("выходит ошибка", "не работает") needs the
-    # preceding user topic to formulate a useful clarification.  It is not an
-    # answer by itself, so never send it through retrieval without that topic.
-    contextual_status = len(tokens) <= 4 and (
-        normalized.startswith(("выходит ошиб", "появилась ошиб", "та же ошиб", "снова ошиб"))
-        or normalized in {"работа", "ошибка", "не работает", "не получается", "не могу", "не входит"}
-    )
-    if not (explicit_follow_up or contextual_status) or not isinstance(context, list):
-        return query
-    skipped_current = False
-    for item in reversed(context):
-        if not isinstance(item, dict) or item.get("sender_type") != "USER":
-            continue
-        previous = str(item.get("text", "")).strip()
-        if not previous:
-            continue
-        if not skipped_current and previous == query:
-            skipped_current = True
-            continue
-        if detect_profanity(previous)["contains_profanity"]:
-            continue
-        return f"{previous}\nУточнение к предыдущей теме: {query}"
-    return query
+
+def _response(status: str, state: DialogState, **value: Any) -> dict[str, Any]:
+    return {"status": status, "dialog_state": state.to_dict(), "resolved_query": state.resolved_query, **value}
+
+
+def _ticket_route(service: Any, frame: Any, query: str) -> dict[str, Any]:
+    router = getattr(service, "ticket_router", None)
+    if router is None:
+        return {"routing_reason": "taxonomy_unavailable"}
+    route = router.route(frame, query)
+    return {"topic": route.topic, "subtopic": route.subtopic, "support_level": route.support_level,
+            "routing_reason": route.reason, "taxonomy_id": route.matched_taxonomy_id, "routing_confidence": route.confidence}
+
+
 def _source(item: dict[str, Any]) -> dict[str, Any]:
     document = str(item.get("source_path") or item.get("source") or item.get("document_id") or "knowledge-base")
     page = item.get("page_start") if item.get("page_start") is not None else item.get("page")
@@ -119,15 +89,3 @@ def _source(item: dict[str, Any]) -> dict[str, Any]:
         "chunk_id": str(item.get("chunk_id") or document),
         **({"page": page} if page is not None else {}),
     }
-
-
-def _topic(items: list[dict[str, Any]]) -> str | None:
-    for item in items:
-        metadata = item.get("metadata")
-        if not isinstance(metadata, dict):
-            continue
-        for key in ("topic", "category", "task_name", "service"):
-            value = str(metadata.get(key) or "").strip()
-            if value:
-                return value
-    return None

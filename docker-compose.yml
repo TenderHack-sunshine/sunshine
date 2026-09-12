@@ -54,6 +54,7 @@ services:
     depends_on:
       generation:
         condition: service_started
+    profiles: ["provisioning"]
     restart: on-failure
 
   indexer:

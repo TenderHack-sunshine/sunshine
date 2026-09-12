@@ -40,11 +40,11 @@ def test_profanity_is_a_hard_exit_before_routing_or_retrieval():
     assert result["diagnostics"]["retrieval_mode"] == "NONE"
 
 
-def test_short_error_without_a_subject_requires_context_before_retrieval():
+def test_legacy_service_without_a_corpus_lexicon_keeps_retrieval_available():
     retriever = FakeRetriever([_source()])
     result = RAGService(retriever).ask("не работает")
-    assert result["status"] == "NEEDS_CLARIFICATION"
-    assert retriever.technical_calls == []
+    assert result["status"] == "ANSWER"
+    assert retriever.technical_calls == [True]
 
 
 def test_specific_short_technical_failure_reaches_retrieval():
@@ -149,11 +149,11 @@ def test_deferred_dense_retriever_activates_after_index_completion(monkeypatch, 
     assert retriever.retrieve("\u0432\u043e\u043f\u0440\u043e\u0441") == ["ready"]
 
 
-def test_vague_topic_uses_clarification_policy_before_retrieval():
+def test_legacy_service_without_a_corpus_lexicon_does_not_invent_subject_rules():
     retriever = FakeRetriever([_source()])
     result = RAGService(retriever).ask("Работа с МЧД")
-    assert result["status"] == "NEEDS_CLARIFICATION"
-    assert retriever.technical_calls == []
+    assert result["status"] == "ANSWER"
+    assert retriever.technical_calls == [False]
 
 
 def test_no_evidence_escalates_and_strong_official_evidence_answers():

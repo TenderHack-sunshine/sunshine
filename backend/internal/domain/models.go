@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type RequestStatus string
 
@@ -9,6 +12,7 @@ const (
 	RequestStatusAnswered          RequestStatus = "answered"
 	RequestStatusNeedClarification RequestStatus = "need_clarification"
 	RequestStatusBlocked           RequestStatus = "blocked"
+	RequestStatusOfferHandoff      RequestStatus = "offer_handoff"
 	RequestStatusEscalated         RequestStatus = "escalated"
 	RequestStatusAIFailed          RequestStatus = "ai_failed"
 )
@@ -20,6 +24,8 @@ const (
 	AIStatusAnswered          AIStatus = "answered"
 	AIStatusNeedClarification AIStatus = "need_clarification"
 	AIStatusBlocked           AIStatus = "blocked"
+	AIStatusOfferHandoff      AIStatus = "offer_handoff"
+	AIStatusEscalateConfirmed AIStatus = "escalate_confirmed"
 	AIStatusEscalated         AIStatus = "escalated"
 	AIStatusFailed            AIStatus = "failed"
 )
@@ -50,18 +56,19 @@ type Source struct {
 }
 
 type SupportRequest struct {
-	ID              string        `json:"id"`
-	UserID          string        `json:"-"`
-	OriginalMessage string        `json:"original_message"`
-	Status          RequestStatus `json:"status"`
-	Topic           string        `json:"topic,omitempty"`
-	SupportLevel    string        `json:"support_level,omitempty"`
-	AIStatus        AIStatus      `json:"ai_status"`
-	AIAnswer        string        `json:"ai_answer,omitempty"`
-	Confidence      *float64      `json:"confidence,omitempty"`
-	Sources         []Source      `json:"sources,omitempty"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	ID              string          `json:"id"`
+	UserID          string          `json:"-"`
+	OriginalMessage string          `json:"original_message"`
+	Status          RequestStatus   `json:"status"`
+	Topic           string          `json:"topic,omitempty"`
+	SupportLevel    string          `json:"support_level,omitempty"`
+	AIStatus        AIStatus        `json:"ai_status"`
+	AIAnswer        string          `json:"ai_answer,omitempty"`
+	Confidence      *float64        `json:"confidence,omitempty"`
+	Sources         []Source        `json:"sources,omitempty"`
+	DialogState     json.RawMessage `json:"dialog_state,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type Message struct {
@@ -73,24 +80,30 @@ type Message struct {
 }
 
 type Ticket struct {
-	ID                  string       `json:"id"`
-	UserID              string       `json:"user_id"`
-	SupportRequestID    string       `json:"support_request_id"`
-	Status              TicketStatus `json:"status"`
-	Topic               string       `json:"topic,omitempty"`
-	SupportLevel        string       `json:"support_level,omitempty"`
-	OriginalQuery       string       `json:"original_query"`
-	ConversationContext string       `json:"conversation_context,omitempty"`
-	AIAnswer            string       `json:"ai_answer,omitempty"`
-	AIConfidence        *float64     `json:"ai_confidence,omitempty"`
-	AISources           []Source     `json:"ai_sources,omitempty"`
-	OperatorID          string       `json:"operator_id,omitempty"`
-	OperatorAnswer      string       `json:"operator_answer,omitempty"`
-	CreatedAt           time.Time    `json:"created_at"`
-	UpdatedAt           time.Time    `json:"updated_at"`
-	TakenAt             *time.Time   `json:"taken_at,omitempty"`
-	AnsweredAt          *time.Time   `json:"answered_at,omitempty"`
-	ClosedAt            *time.Time   `json:"closed_at,omitempty"`
+	ID                  string          `json:"id"`
+	UserID              string          `json:"user_id"`
+	SupportRequestID    string          `json:"support_request_id"`
+	Status              TicketStatus    `json:"status"`
+	Topic               string          `json:"topic,omitempty"`
+	Subtopic            string          `json:"subtopic,omitempty"`
+	MatchedTaxonomyID   string          `json:"matched_taxonomy_id,omitempty"`
+	SupportLevel        string          `json:"support_level,omitempty"`
+	OriginalQuery       string          `json:"original_query"`
+	ConversationContext string          `json:"conversation_context,omitempty"`
+	AIAnswer            string          `json:"ai_answer,omitempty"`
+	AIConfidence        *float64        `json:"ai_confidence,omitempty"`
+	AISources           []Source        `json:"ai_sources,omitempty"`
+	ResolvedQuery       string          `json:"resolved_query,omitempty"`
+	IntentFrame         json.RawMessage `json:"intent_frame,omitempty"`
+	RoutingReason       string          `json:"routing_reason,omitempty"`
+	EscalationReason    string          `json:"escalation_reason,omitempty"`
+	OperatorID          string          `json:"operator_id,omitempty"`
+	OperatorAnswer      string          `json:"operator_answer,omitempty"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
+	TakenAt             *time.Time      `json:"taken_at,omitempty"`
+	AnsweredAt          *time.Time      `json:"answered_at,omitempty"`
+	ClosedAt            *time.Time      `json:"closed_at,omitempty"`
 }
 
 type Feedback struct {

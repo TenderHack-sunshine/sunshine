@@ -1,0 +1,8 @@
+ALTER TABLE support_requests
+    ADD COLUMN IF NOT EXISTS dialog_state JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE tickets
+    ADD COLUMN IF NOT EXISTS resolved_query TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS intent_frame JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS routing_reason TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS escalation_reason TEXT NOT NULL DEFAULT '';

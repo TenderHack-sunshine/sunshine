@@ -71,12 +71,12 @@ def test_generated_answer_removes_only_the_redundant_model_template():
 
 
 @pytest.mark.parametrize("query", ["Что делать с МЧД?"])
-def test_qwen_is_not_called_when_clarification_precedes_retrieval(query):
+def test_qwen_legacy_adapter_without_corpus_lexicon_keeps_current_behavior(query):
     client = Client()
     result = RAGService(Retriever(), preprocessor=QueryPreprocessor(Detector()), generator=QwenGenerator(client)).ask(query)
-    assert result["status"] == "NEEDS_CLARIFICATION"
-    assert result["diagnostics"]["generation"]["invoked"] is False
-    assert client.calls == 0
+    assert result["status"] == "ANSWER"
+    assert result["diagnostics"]["generation"]["invoked"] is True
+    assert client.calls == 1
 
 
 def test_qwen_is_not_called_after_profanity_gate():
