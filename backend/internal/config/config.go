@@ -19,14 +19,24 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	config := Config{Port: value("PORT", "8080"), DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")), RAGServiceURL: strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), RAGServiceTimeout: timeout}
-	if config.DatabaseURL == "" {
-		return Config{}, errors.New("DATABASE_URL is required")
+	databaseURL, err := LoadDatabaseURL()
+	if err != nil {
+		return Config{}, err
 	}
+	config := Config{Port: value("PORT", "8080"), DatabaseURL: databaseURL, RAGServiceURL: strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), RAGServiceTimeout: timeout}
 	if config.RAGServiceURL == "" {
 		return Config{}, errors.New("RAG_SERVICE_URL is required")
 	}
 	return config, nil
+}
+
+// LoadDatabaseURL is used by migrations, which do not need the RAG service.
+func LoadDatabaseURL() (string, error) {
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		return "", errors.New("DATABASE_URL is required")
+	}
+	return databaseURL, nil
 }
 
 func parseTimeout(raw string) (time.Duration, error) {

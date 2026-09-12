@@ -32,6 +32,7 @@ class RAGAPI:
         retrieval_query = "\n".join(dict.fromkeys([*user_messages, query]))
         result = self.service.ask(retrieval_query)
         sources = [_source(item) for item in result.get("sources", [])]
+        topic = _topic(result.get("sources", []))
         status = result.get("status")
 
         if status == "ANSWER":
@@ -40,6 +41,7 @@ class RAGAPI:
                 "answer": result["answer"],
                 "support_level": result.get("route") or "L1",
                 "sources": sources,
+                **({"topic": topic} if topic else {}),
             }
         if status == "NEEDS_CLARIFICATION":
             return {
@@ -47,7 +49,7 @@ class RAGAPI:
                 "clarification_question": result["answer"],
                 "sources": [],
             }
-        if status == "REFUSE_PROFANITY":
+        if status in {"REFUSE_PROFANITY", "REJECTED_PROFANITY"}:
             return {
                 "status": "blocked",
                 "blocked_reason": result["answer"],
@@ -60,6 +62,7 @@ class RAGAPI:
                 "support_level": result.get("route") or "L2",
                 "confidence": 0.0,
                 "sources": sources,
+                **({"topic": topic} if topic else {}),
             }
         raise RuntimeError(f"unsupported RAG status: {status!r}")
 
@@ -86,3 +89,15 @@ def _source(item: dict[str, Any]) -> dict[str, Any]:
         "chunk_id": str(item.get("chunk_id") or document),
         **({"page": page} if page is not None else {}),
     }
+
+
+def _topic(items: list[dict[str, Any]]) -> str | None:
+    for item in items:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        for key in ("topic", "category", "task_name", "service"):
+            value = str(metadata.get(key) or "").strip()
+            if value:
+                return value
+    return None

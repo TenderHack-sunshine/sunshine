@@ -148,7 +148,7 @@ func (s *PostgresStore) AnswerTicket(ctx context.Context, ticketID, operatorID, 
 	defer tx.Rollback(ctx)
 	ticket, err := scanTicket(tx.QueryRow(ctx, `UPDATE tickets SET status=$2,operator_answer=$3,answered_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$4 AND operator_id=$5 RETURNING id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, ticketID, domain.TicketStatusAnswered, answer, domain.TicketStatusInProgress, operatorID))
 	if err != nil {
-		return domain.Ticket{}, normalizeTicketError(err)
+		return domain.Ticket{}, s.ticketMutationError(ctx, ticketID, err)
 	}
 	message.RequestID = ticket.SupportRequestID
 	if _, err := tx.Exec(ctx, `INSERT INTO messages (id,support_request_id,sender_type,text,created_at) VALUES ($1,$2,$3,$4,$5)`, message.ID, message.RequestID, message.Sender, message.Text, message.CreatedAt); err != nil {
@@ -168,13 +168,13 @@ func (s *PostgresStore) updateTicket(ctx context.Context, ticketID, query string
 	args = append([]any{ticketID}, args...)
 	ticket, err := scanTicket(s.pool.QueryRow(ctx, query, args...))
 	if err != nil {
-		return domain.Ticket{}, normalizeTicketError(err)
+		return domain.Ticket{}, s.ticketMutationError(ctx, ticketID, err)
 	}
 	return ticket, nil
 }
 
 func (s *PostgresStore) CreateFeedback(ctx context.Context, feedback domain.Feedback) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO feedback (id,user_id,support_request_id,ticket_id,rating,comment,resolved,created_at) SELECT $1,$2,$3,id,$4,$5,$6,$7 FROM tickets WHERE support_request_id=$3 UNION ALL SELECT $1,$2,$3,NULL,$4,$5,$6,$7 WHERE NOT EXISTS (SELECT 1 FROM tickets WHERE support_request_id=$3)`, feedback.ID, feedback.UserID, feedback.SupportRequestID, feedback.Rating, feedback.Comment, feedback.Resolved, feedback.CreatedAt)
+	_, err := s.pool.Exec(ctx, `INSERT INTO feedback (id,user_id,support_request_id,ticket_id,rating,comment,resolved,created_at) VALUES ($1,$2,$3,(SELECT id FROM tickets WHERE support_request_id=$3),$4,$5,$6,$7)`, feedback.ID, feedback.UserID, feedback.SupportRequestID, feedback.Rating, feedback.Comment, feedback.Resolved, feedback.CreatedAt)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return application.ErrDuplicateFeedback
@@ -241,11 +241,14 @@ func scanCounts(ctx context.Context, pool *pgxpool.Pool, query string, target ma
 	}
 	return rows.Err()
 }
-func normalizeTicketError(err error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return application.ErrInvalidState
+func (s *PostgresStore) ticketMutationError(ctx context.Context, ticketID string, err error) error {
+	if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, application.ErrNotFound) {
+		return err
 	}
-	return err
+	if _, getErr := s.GetTicket(ctx, ticketID); getErr != nil {
+		return getErr
+	}
+	return application.ErrInvalidState
 }
 func scanRequest(row pgx.Row) (domain.SupportRequest, error) {
 	var r domain.SupportRequest

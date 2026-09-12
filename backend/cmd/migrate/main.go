@@ -10,11 +10,11 @@ import (
 )
 
 func main() {
-	settings, err := config.Load()
+	databaseURL, err := config.LoadDatabaseURL()
 	if err != nil {
 		log.Fatal(err)
 	}
-	pool, err := pgxpool.New(context.Background(), settings.DatabaseURL)
+	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
