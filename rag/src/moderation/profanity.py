@@ -54,6 +54,19 @@ _PREFIX_RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
 )
 
 
+_EXTRA_HOMOGLYPHS = str.maketrans({"\u0456": "\u0438", "\u0457": "\u0438", "\u04cf": "\u043b"})
+
+# These are complete roots only, so the gate stays precise for normal support
+# vocabulary.  All patterns are compiled once at import time.
+_EXTENDED_RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    ("root", "\u0434\u043e\u043b\u0431\u043e\u0435\u0431", re.compile(r"(?<![\u0430-\u044f\u0451])\u0434\u043e\u043b\u0431\u043e(?:\u0435|\u0451)\u0431[\u0430-\u044f\u0451]*(?![\u0430-\u044f\u0451])", re.IGNORECASE)),
+    ("root", "\u0443\u0435\u0431\u043e\u043a", re.compile(r"(?<![\u0430-\u044f\u0451])\u0443(?:\u0435|\u0451)\u0431(?:\u043e\u043a|\u0438\u0449|\u0430\u043d)[\u0430-\u044f\u0451]*(?![\u0430-\u044f\u0451])", re.IGNORECASE)),
+    ("root", "\u043f\u0438\u0434\u043e\u0440", re.compile(r"(?<![\u0430-\u044f\u0451])\u043f(?:\u0438|\u0435)\u0434(?:\u043e\u0440|\u0430\u0440|\u043e\u0440\u0430\u0441)[\u0430-\u044f\u0451]*(?![\u0430-\u044f\u0451])", re.IGNORECASE)),
+    ("root", "\u0433\u0430\u043d\u0434\u043e\u043d", re.compile(r"(?<![\u0430-\u044f\u0451])\u0433\u0430\u043d\u0434\u043e\u043d[\u0430-\u044f\u0451]*(?![\u0430-\u044f\u0451])", re.IGNORECASE)),
+    ("root", "\u0448\u043b\u044e\u0445\u0430", re.compile(r"(?<![\u0430-\u044f\u0451])\u0448\u043b\u044e\u0445[\u0430-\u044f\u0451]*(?![\u0430-\u044f\u0451])", re.IGNORECASE)),
+)
+
+
 def matching_representations(text: str) -> tuple[str, str]:
     """Return readable-normalized and separator-compacted representations."""
     normalized = unicodedata.normalize("NFKC", text).casefold().translate(_HOMOGLYPHS).replace("ё", "е")
@@ -69,8 +82,11 @@ def normalize_for_profanity(text: str) -> str:
 
 def detect_profanity(text: str) -> dict[str, object]:
     """Return deterministic match details without probabilistic semantics."""
-    readable, compact = matching_representations(text)
-    for match_type, canonical, pattern in _RULES + _PREFIX_RULES:
+    # Removing invisible joiners prevents a common evasion without altering
+    # the original user query or introducing model inference.
+    cleaned = re.sub(r"[\u200b-\u200d\u2060\ufeff]", "", text).translate(_EXTRA_HOMOGLYPHS)
+    readable, compact = matching_representations(cleaned)
+    for match_type, canonical, pattern in _RULES + _PREFIX_RULES + _EXTENDED_RULES:
         match = pattern.search(readable) or pattern.search(compact)
         if match:
             return {"contains_profanity": True, "matches": [canonical], "match_type": match_type,

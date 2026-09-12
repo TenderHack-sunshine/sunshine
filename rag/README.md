@@ -1,5 +1,59 @@
 # Tender Hack 2026 — local RAG MVP
 
+## Docker profile
+
+The supported runtime is one Docker Compose stack: PostgreSQL, Qdrant, a
+Qwen3 embedding worker, Ollama with `qwen3:1.7b`, the RAG API, Go API, and
+frontend. `docker compose up --build -d` downloads the Qwen model once into a
+named Docker volume; the first start is therefore much longer than subsequent
+starts. Open `http://localhost:5173` after all services are healthy.
+
+The answer model is Qwen3 1.7B (Ollama's CPU quantized build). It is invoked only
+after retrieval and safety gates, receives the user question plus up to three
+complete, deduplicated evidence chunks (configurable with
+`GENERATION_MAX_EVIDENCE_CHUNKS`). It has a 50-second generation budget within
+the one-minute end-to-end API deadline and must pass post-generation grounding. No host
+Python worker or `host.docker.internal` dependency is required.
+
+## Data and extraction audit
+
+Run the audits from `rag/` after every corpus refresh:
+
+```powershell
+python scripts/audit_corpus.py --output data/processed/audit/corpus_audit.json
+python scripts/audit_pdfs.py --output data/processed/audit/pdf_extraction_audit.json
+```
+
+The corpus audit checks every supplied local PDF/XLSX against canonical chunk
+metadata. It deliberately reports `UNVERIFIABLE_NO_SOURCE_EXPORT` when the
+raw `zakupki.mos.ru` knowledge-base export is absent: 253 KB chunks do **not**
+prove that the public site was ingested completely. The PDF report records pages
+with no extracted text, very short text, or image-heavy/low-text layout. OCR is
+not installed or run by this script; its purpose is a reproducible list of
+possible extraction losses before deciding whether OCR is needed.
+
+## Evidence, FAQ, and safety limits
+
+Context selection keeps whole chunks within `GENERATION_MAX_CONTEXT_CHARS`,
+removes exact duplicates, limits repeated documents, and reserves the protected
+official tier ahead of historical tickets. Adjacent compacted chunks from one
+instruction may remain together. Retrieval scores are not changed. Response
+diagnostics list the original chunk IDs actually sent to the generator.
+
+The post-generation check is a deliberately conservative local lexical and
+numeric guard, not a guarantee of factual correctness. Unsupported substantive
+claims or values cause `ESCALATE_TO_OPERATOR`; human review is still required
+for legal or high-impact answers.
+
+`data/processed/faq/cards.jsonl` is optional. Runtime uses only cards marked
+`verified=true` and `review_status=VERIFIED` with current, official source
+chunk IDs. Pending, stale, or source-less cards are ignored and normal RAG is
+used instead. Generate review-only drafts with:
+
+```powershell
+python scripts/draft_faq_cards.py --output data/processed/faq/drafts.jsonl --limit 10
+```
+
 ## Active retrieval path
 
 The active MVP uses two independent retrieval paths:
@@ -12,7 +66,18 @@ query -> moderation -> normalization -> technical router
       -> ticket document diversity -> extractive evidence
 ```
 
-The official dense collection is named `zakupki_official`. It must contain exactly 1,073 points and never contains `support_ticket` records. Qdrant is optional at runtime: an unavailable collection, Qdrant error, embedding error, or dense-query timeout explicitly selects the lightweight official BM25 fallback; the CLI prints `dense_available=false` and `fallback_used=true`.
+The official dense collection is named `zakupki_official` and never contains
+`support_ticket` records. The indexer writes
+`data/processed/index/official_index_manifest.json` only after it indexes the
+complete current canonical official set; runtime validates that manifest and
+the Qdrant count before enabling dense search. `OFFICIAL_EXPECTED_POINTS=1073`
+is only a legacy fallback for old installations with no manifest. After adding
+data, run `scripts/prepare_index.py`, then rerun
+`scripts/index_official_qdrant.py`; do not edit the count merely to accept a
+partial index. Qdrant is optional at runtime: an unavailable collection,
+Qdrant error, embedding error, or dense-query timeout explicitly selects the
+lightweight official BM25 fallback; the CLI prints `dense_available=false` and
+`fallback_used=true`.
 
 On the Windows Intel host, start the persistent local Qwen worker once before serving requests. It loads and warms the model once, then the RAG process uses Qdrant only via REST/HTTP.
 
@@ -32,7 +97,7 @@ Start-Process python -ArgumentList '-u','scripts/index_official_qdrant.py','--ba
 
 ```
 
-`scripts/ask.py` is the stable end-to-end entry point. It uses `dense_available=false` and `fallback_used=true` until REST Qdrant reports exactly 1,073 official points and the persistent worker is ready; it never attempts dense embedding of the 25,044 historical tickets.
+`scripts/ask.py` is the stable end-to-end entry point. It uses `dense_available=false` and `fallback_used=true` until the current official-index manifest and Qdrant count agree and the persistent worker is ready; it never attempts dense embedding of the 25,044 historical tickets.
 
 ## Demo preflight
 
@@ -68,7 +133,7 @@ checks `final_grounding_review.md`.
 
 - [ ] deterministic profanity smoke cases passed
 - [ ] Qwen embedding worker alive
-- [ ] Qdrant healthy; `zakupki_official` has 1,073 points
+- [ ] Qdrant healthy; `official_index_manifest.json` matches `zakupki_official`
 - [ ] ticket BM25 index present
 - [ ] `RERANKER_ENABLED=0`
 - [ ] `RETRIEVAL_STRATEGY=dense_primary`
@@ -76,7 +141,7 @@ checks `final_grounding_review.md`.
 - [ ] `CLARIFICATION_POLICY_ENABLED=1`
 - [ ] `python -m pytest -q` is green
 
-With both the 1,073-point collection and the worker ready, the default is `dense_primary`: Qdrant dense ranks official evidence. BM25 is retrieved cheaply for conservative recall rescue when the Dense result is weak and as the full fallback when Dense is unavailable. L3 additionally queries ticket BM25; tickets are never dense-indexed. `hybrid_rrf` and `bm25_only` remain available as explicit experimental strategies.
+With the manifest-validated official collection and the worker ready, the default is `dense_primary`: Qdrant dense ranks official evidence. BM25 is retrieved cheaply for conservative recall rescue when the Dense result is weak and as the full fallback when Dense is unavailable. L3 additionally queries ticket BM25; tickets are never dense-indexed. `hybrid_rrf` and `bm25_only` remain available as explicit experimental strategies.
 
 Локальный ассистент поддержки Портала поставщиков Москвы. Проект не вызывает внешние LLM/API и не скачивает веса моделей автоматически. Ответ формируется только из найденного evidence или заменяется передачей оператору.
 
@@ -107,7 +172,7 @@ Canonical preparation валидирует отсутствие пустого �
   -> optional reranker hook
   -> document diversity для tickets
   -> confidence + evidence sufficiency: answer / clarification / operator
-  -> [ANSWER only] separate local Qwen2.5-1.5B-Instruct worker
+  -> [ANSWER only] Docker-hosted Ollama Qwen3 8B
   -> post-generation grounding guard
 ```
 
@@ -194,7 +259,11 @@ Collection называется `zakupki_official`; vectors имеют dimension
 
 ## Retrieval evaluation and optional reranking
 
-Offline evaluation uses JSONL. Each row may contain only the fields already human-validated:
+Offline evaluation uses JSONL. Every newly reviewed row should declare
+`label_provenance` as one of `HUMAN_LABELLED`, `MODEL_REVIEWED`, `SILVER`, or
+`PENDING_HUMAN_REVIEW`. Only `HUMAN_LABELLED` items may be described as ground
+truth; the evaluator preserves all other groups as diagnostics and never
+upgrades them automatically.
 
 ```json
 {"query":"как добавить МЧД","route":"L1","relevant_chunk_ids":["..."],"relevant_document_ids":["..."],"expected_decision":"ANSWER","notes":"optional"}
@@ -227,18 +296,13 @@ Reranking is optional. `RERANKER_ENABLED=0` is the safe default (`RERANK_ENABLED
 
 ### Local answer synthesis
 
-`GENERATOR_BACKEND=qwen` uses a separate persistent `Qwen2.5-1.5B-Instruct` CPU worker. It is not the Qwen embedding worker and does not change Dense/BM25/Qdrant retrieval. The 1.5B model is the smallest tested local option that follows the Russian grounded prompt; the smaller 0.5B checkpoint was rejected because it failed a direct Russian fact smoke test. The model is provisioned once before the demo, never fetched at runtime.
+`GENERATOR_BACKEND=qwen` uses Docker-hosted Ollama with `qwen3:1.7b`. It is not
+the Qwen embedding worker and does not change Dense/BM25/Qdrant retrieval. The
+model is downloaded once into a Docker volume at first Compose startup.
 
 ```powershell
-# One-time preparation (requires network only now, not during the demo).
-python scripts/download_generation_model.py
-
-# Separate terminal on the host; loaded once and reused by all RAG requests.
-python -u scripts/generation_worker.py
-
-# Docker reaches it through host.docker.internal. The compose demo profile sets
-# GENERATOR_BACKEND=qwen and ALLOW_EXTRACTIVE_GENERATION_FALLBACK=0.
-python scripts/check_demo_health.py
+docker compose up --build -d
+docker compose ps
 ```
 
 Generation is called only after profanity, clarification, retrieval, confidence and evidence-sufficiency gates return `ANSWER`. A worker failure, timeout, empty output, or failed post-generation grounding returns `ESCALATE_TO_OPERATOR`; extractive fallback is opt-in and disabled by default. Internal diagnostics expose backend, invocation, logical model name, latency, grounding result, and fallback usage without exposing a filesystem path.

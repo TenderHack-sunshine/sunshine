@@ -21,6 +21,7 @@ type ProcessRequest struct {
 	Query          string           `json:"query"`
 	ConversationID string           `json:"conversation_id,omitempty"`
 	Context        []domain.Message `json:"context,omitempty"`
+	ModerationOnly bool             `json:"moderation_only,omitempty"`
 }
 
 type RAGClient interface {

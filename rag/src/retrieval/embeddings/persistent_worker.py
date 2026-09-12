@@ -30,8 +30,16 @@ class PersistentEmbeddingServer(socketserver.ThreadingTCPServer):
         if operation == "status":
             return {"ok": True, "dimension": self.dimension, "device": self.embedder.device,
                     "dtype": self.embedder.precision, "model_load_ms": self.model_load_ms, "warmup_ms": self.warmup_ms}
+        if operation == "documents":
+            texts = request.get("texts")
+            if not isinstance(texts, list) or not all(isinstance(text, str) for text in texts):
+                raise ValueError("texts must be a list of strings")
+            started = perf_counter()
+            with self.embedding_lock:
+                vectors = self.embedder.embed_documents(texts)
+            return {"ok": True, "vectors": vectors.tolist(), "document_embedding_ms": (perf_counter() - started) * 1000}
         if operation != "query" or not isinstance(request.get("query"), str):
-            raise ValueError("Only query embedding requests are supported")
+            raise ValueError("operation must be status, query, or documents")
         started = perf_counter()
         with self.embedding_lock:
             vector = self.embedder.embed_query(request["query"])
@@ -79,3 +87,7 @@ class PersistentQwenEmbeddingClient:
         response = self._request({"operation": "query", "query": query})
         self.last_metrics = {"query_embedding_ms": float(response.get("query_embedding_ms", 0.0))}
         return response["vector"]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        response = self._request({"operation": "documents", "texts": texts}, timeout=max(self.timeout_seconds, 120))
+        return response["vectors"]

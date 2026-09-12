@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# This image owns only the small Qwen3 embedding model.  The 8B answer model
+# runs independently in llama.cpp, so it never competes for Python/Torch RAM.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.5.1+cpu \
+    && pip install --no-cache-dir "sentence-transformers>=3.0,<4"
+
+COPY src ./src
+COPY scripts/embedding_worker.py ./scripts/embedding_worker.py
+
+ENV PYTHONPATH=/app PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
+EXPOSE 8765
+CMD ["python", "scripts/embedding_worker.py", "--host", "0.0.0.0", "--port", "8765"]

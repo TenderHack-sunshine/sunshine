@@ -15,9 +15,10 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from src.core.config import Settings
 from src.retrieval.canonical import read_jsonl
-from src.retrieval.embeddings.isolated_qwen3 import IsolatedQwen3DocumentWorker
+from src.retrieval.embeddings.persistent_worker import PersistentQwenEmbeddingClient
 from src.retrieval.official_dense import OfficialDenseRetriever
 from src.retrieval.vector_store import HttpQdrantStore
+from src.retrieval.index_manifest import build_manifest
 
 OFFICIAL_SOURCE_TYPES = frozenset(OfficialDenseRetriever.official_source_types)
 VECTOR_DIMENSION = 1024
@@ -63,7 +64,7 @@ def save_checkpoint(path: Path, collection: str, completed: set[str]) -> None:
 
 
 def index_resumable(*, input_path: Path, store, worker, checkpoint_path: Path, batch_size: int = 1,
-                    recreate: bool = False, log_every: int = 25, emit=print) -> dict:
+                    recreate: bool = False, log_every: int = 25, manifest_path: Path | None = None, emit=print) -> dict:
     """Stream official chunks, upsert stable UUID points, then checkpoint each batch."""
     total = sum(1 for _ in iter_official_chunks(input_path))
     if not total:
@@ -92,7 +93,13 @@ def index_resumable(*, input_path: Path, store, worker, checkpoint_path: Path, b
             eta = (total - processed) / rate if rate else 0.0
             emit(f"[{processed}/{total}] elapsed={elapsed:.1f}s eta={eta:.1f}s rate={rate:.3f} chunks/s last_batch={perf_counter() - batch_started:.1f}s qdrant_points={store.count()}", flush=True)
             last_log = processed
-    return {"official_chunks": total, "completed_chunks": len(completed), "qdrant_points": store.count(), "checkpoint": str(checkpoint_path)}
+    result = {"official_chunks": total, "completed_chunks": len(completed), "qdrant_points": store.count(), "checkpoint": str(checkpoint_path)}
+    if manifest_path and result["qdrant_points"] == total:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest = build_manifest(list(iter_official_chunks(input_path)), store.collection)
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        result["manifest"] = str(manifest_path)
+    return result
 
 
 def main() -> None:
@@ -101,6 +108,7 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=settings.processed_dir / "index" / "all_chunks.jsonl")
     parser.add_argument("--collection", default=settings.qdrant_official_collection)
     parser.add_argument("--checkpoint", type=Path, default=settings.processed_dir / "index" / "official_index_checkpoint.json")
+    parser.add_argument("--manifest", type=Path, default=settings.processed_dir / "index" / "official_index_manifest.json")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--log-every", type=int, default=25)
     parser.add_argument("--recreate", action="store_true", help="Intentionally discard the collection and start a new checkpoint.")
@@ -108,12 +116,11 @@ def main() -> None:
     if args.batch_size < 1 or args.log_every < 1:
         parser.error("--batch-size and --log-every must be positive")
     store = HttpQdrantStore(settings.qdrant_host, settings.qdrant_port, args.collection)
-    worker = IsolatedQwen3DocumentWorker(settings.embedding_model_path)
-    try:
-        report = index_resumable(input_path=args.input, store=store, worker=worker, checkpoint_path=args.checkpoint,
-                                 batch_size=args.batch_size, recreate=args.recreate, log_every=args.log_every)
-    finally:
-        worker.close()
+    worker = PersistentQwenEmbeddingClient(settings.dense_worker_host, settings.dense_worker_port,
+                                           timeout_seconds=max(settings.dense_query_timeout_seconds, 120))
+    report = index_resumable(input_path=args.input, store=store, worker=worker, checkpoint_path=args.checkpoint,
+                             batch_size=args.batch_size, recreate=args.recreate, log_every=args.log_every,
+                             manifest_path=args.manifest)
     print(json.dumps(report, ensure_ascii=False), flush=True)
 
 

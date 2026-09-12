@@ -16,6 +16,14 @@ class Reranker:
     def available(self) -> bool:
         return self.model_path is not None and self.model_path.exists()
 
+    @property
+    def availability_reason(self) -> str:
+        if self.model_path is None:
+            return "MODEL_PATH_NOT_CONFIGURED"
+        if not self.model_path.exists():
+            return "LOCAL_MODEL_MISSING"
+        return "AVAILABLE"
+
     def _load(self):
         if not self.available:
             return None

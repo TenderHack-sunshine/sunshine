@@ -1,4 +1,81 @@
 services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    expose:
+      - "6333"
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  embedding:
+    build:
+      context: ./rag
+      dockerfile: Dockerfile.embedding
+    volumes:
+      - ./rag/models/qwen3-embedding-0.6b:/models/qwen3-embedding-0.6b:ro
+    environment:
+      MODEL_DIR: /models
+    expose:
+      - "8765"
+    healthcheck:
+      test: ["CMD", "python", "scripts/embedding_worker.py", "--host", "127.0.0.1", "--port", "8765", "--status"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  generation:
+    image: ollama/ollama:latest
+    volumes:
+      - generation_model_cache:/root/.ollama
+    expose:
+      - "11434"
+    environment:
+      GENERATION_OLLAMA_MODEL: qwen3:1.7b
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q 'qwen3:1.7b'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: on-failure
+
+  model-init:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh"]
+    command: ["-c", "until ollama list >/dev/null 2>&1; do sleep 1; done; ollama pull \"$$GENERATION_OLLAMA_MODEL\""]
+    environment:
+      OLLAMA_HOST: http://generation:11434
+      GENERATION_OLLAMA_MODEL: qwen3:1.7b
+    volumes:
+      - generation_model_cache:/root/.ollama
+    depends_on:
+      generation:
+        condition: service_started
+    restart: on-failure
+
+  indexer:
+    build:
+      context: ./rag
+      dockerfile: Dockerfile
+    command: ["python", "scripts/index_official_qdrant.py", "--batch-size", "4", "--log-every", "25"]
+    environment:
+      DATA_DIR: /app/data
+      MODEL_DIR: /models
+      QDRANT_HOST: qdrant
+      DENSE_WORKER_HOST: embedding
+      DENSE_QUERY_TIMEOUT_SECONDS: "120"
+    volumes:
+      - ./rag/data:/app/data
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    restart: "no"
+
   rag:
     build:
       context: ./rag
@@ -6,19 +83,27 @@ services:
     environment:
       DATA_DIR: /app/data
       EVIDENCE_SUFFICIENCY_ENABLED: "1"
-      # Qdrant and the persistent embedding worker run locally on the demo host.
-      # Docker Desktop exposes them through this stable, explicit hostname.
-      QDRANT_HOST: host.docker.internal
-      DENSE_WORKER_HOST: host.docker.internal
-      # Qwen2.5-1.5B-Instruct generation stays in a separate persistent host worker because
-      # this lightweight RAG image intentionally contains no model weights.
+      QDRANT_HOST: qdrant
+      DENSE_WORKER_HOST: embedding
+      DENSE_QUERY_TIMEOUT_SECONDS: "3"
       GENERATOR_BACKEND: qwen
-      GENERATION_WORKER_HOST: host.docker.internal
-      GENERATION_WORKER_PORT: "8766"
-      GENERATION_MODEL_NAME: Qwen2.5-1.5B-Instruct
+      GENERATION_WORKER_HOST: generation
+      GENERATION_WORKER_PORT: "11434"
+      # Retrieval may take up to a few seconds. Reserve the rest of the
+      # one-minute end-to-end SLA for a complete synthesized answer.
+      GENERATION_MAX_NEW_TOKENS: "256"
+      GENERATION_MAX_SECONDS: "50"
+      # A compact two-source context leaves CPU time for a finished response.
+      GENERATION_MAX_CONTEXT_CHARS: "2400"
+      GENERATION_TIMEOUT_SECONDS: "52"
+      GENERATION_MAX_EVIDENCE_CHUNKS: "2"
+      GENERATION_MODEL_NAME: Qwen3-1.7B
+      GENERATION_OLLAMA_MODEL: qwen3:1.7b
+      OFFICIAL_INDEX_MANIFEST_PATH: /app/data/processed/index/official_index_manifest.json
+      FAQ_CARDS_PATH: /app/data/processed/faq/cards.jsonl
+      # Use a grounded fallback only for an actual unavailable/invalid model
+      # response; normal requests now have enough time to synthesize.
       ALLOW_EXTRACTIVE_GENERATION_FALLBACK: "0"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./rag/data:/app/data:ro
     expose:
@@ -28,6 +113,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      generation:
+        condition: service_started
+    restart: on-failure
 
   postgres:
     image: postgres:16-alpine
@@ -67,7 +158,8 @@ services:
       PORT: "8080"
       DATABASE_URL: postgres://sunshine:sunshine@postgres:5432/sunshine?sslmode=disable
       RAG_SERVICE_URL: http://rag:8000
-      RAG_SERVICE_TIMEOUT: ${RAG_SERVICE_TIMEOUT:-30s}
+      # Includes retrieval plus the bounded 50-second local generation call.
+      RAG_SERVICE_TIMEOUT: ${RAG_SERVICE_TIMEOUT:-60s}
       JWT_SECRET: ${JWT_SECRET:-sunshine-demo-jwt-secret-change-before-production-2026}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
@@ -85,7 +177,7 @@ services:
       migrate:
         condition: service_completed_successfully
       rag:
-        condition: service_healthy
+        condition: service_started
 
   frontend:
     build:
@@ -100,3 +192,5 @@ services:
 
 volumes:
   postgres_data:
+  qdrant_data:
+  generation_model_cache:

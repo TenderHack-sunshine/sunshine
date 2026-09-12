@@ -128,12 +128,41 @@ func TestTicketLifecycleFeedbackAnalyticsAndAIUnavailable(t *testing.T) {
 	}
 }
 
+func TestEscalatedFollowUpStillUsesProfanityModeration(t *testing.T) {
+	store := newFakeStore()
+	rag := &fakeRAG{results: []port.ProcessResponse{
+		{Status: domain.AIStatusEscalated, Answer: "Передано специалисту"},
+		{Status: domain.AIStatusBlocked, BlockedReason: "Переформулируйте без нецензурной лексики."},
+	}}
+	service := NewSupportService(store, rag)
+	request, ticket, err := service.Create(context.Background(), Actor{UserID: "user-1"}, "Ошибка при загрузке")
+	if err != nil || ticket == nil || request.Status != domain.RequestStatusEscalated {
+		t.Fatalf("create escalation: request=%+v ticket=%+v err=%v", request, ticket, err)
+	}
+	updated, followUpTicket, err := service.AddUserMessage(context.Background(), Actor{UserID: "user-1"}, request.ID, "хуй")
+	if err != nil || followUpTicket != nil {
+		t.Fatalf("add moderated follow-up: ticket=%+v err=%v", followUpTicket, err)
+	}
+	if updated.Status != domain.RequestStatusEscalated {
+		t.Fatalf("moderation must not replace the operator escalation: %+v", updated)
+	}
+	messages := store.messages[request.ID]
+	if len(messages) != 4 || messages[3].Sender != domain.SenderAI || messages[3].Text != "Переформулируйте без нецензурной лексики." {
+		t.Fatalf("expected blocked reply after follow-up, got %+v", messages)
+	}
+	if len(rag.requests) != 2 || !rag.requests[1].ModerationOnly || rag.requests[1].Query != "хуй" {
+		t.Fatalf("follow-up must use moderation-only RAG path: %+v", rag.requests)
+	}
+}
+
 type fakeRAG struct {
 	results []port.ProcessResponse
 	err     error
+	requests []port.ProcessRequest
 }
 
-func (a *fakeRAG) Process(_ context.Context, _ port.ProcessRequest) (port.ProcessResponse, error) {
+func (a *fakeRAG) Process(_ context.Context, request port.ProcessRequest) (port.ProcessResponse, error) {
+	a.requests = append(a.requests, request)
 	if a.err != nil {
 		return port.ProcessResponse{}, a.err
 	}
@@ -189,6 +218,15 @@ func (s *fakeStore) ListSupportRequestsByUser(_ context.Context, userID string) 
 
 func (s *fakeStore) AddMessage(_ context.Context, m domain.Message) error {
 	s.messages[m.RequestID] = append(s.messages[m.RequestID], m)
+	return nil
+}
+func (s *fakeStore) RefreshTicketContext(_ context.Context, requestID string) error {
+	for ticketID, ticket := range s.tickets {
+		if ticket.SupportRequestID == requestID {
+			ticket.ConversationContext = conversationText(s.messages[requestID])
+			s.tickets[ticketID] = ticket
+		}
+	}
 	return nil
 }
 func (s *fakeStore) ListMessages(_ context.Context, id string) ([]domain.Message, error) {

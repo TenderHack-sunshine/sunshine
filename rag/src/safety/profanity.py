@@ -8,10 +8,6 @@ from typing import Protocol
 from src.moderation.profanity import detect_profanity
 
 
-class ProfanityModelLoadError(RuntimeError):
-    """Compatibility name retained for callers of the old adapter."""
-
-
 @dataclass(frozen=True)
 class ProfanityResult:
     detected: bool
@@ -37,15 +33,6 @@ class RuleProfanityDetector:
         detected = bool(result["contains_profanity"])
         return ProfanityResult(detected=detected, probability=1.0 if detected else 0.0, threshold=1.0,
                                match_type=result["match_type"], matched=result["matched"])
-
-
-class MLProfanityDetector(RuleProfanityDetector):
-    """Deprecated import-compatible name; no model is loaded anymore."""
-
-    backend = "rule"
-
-    def __init__(self, _model_dir: str | Path | None = None, _threshold_path: str | Path | None = None, **_kwargs):
-        super().__init__()
 
 
 def build_profanity_detector(backend: str = "rule", *_legacy_paths: str | Path) -> ProfanityDetector:

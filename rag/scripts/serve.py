@@ -63,6 +63,17 @@ def main() -> None:
         Handler.service = RAGAPI.from_settings(settings)
         rag_service = Handler.service.service
         retriever = rag_service.retriever
+        generator = rag_service.generator
+        generation_ready = getattr(generator, "backend", "extractive") != "qwen"
+        if not generation_ready:
+            try:
+                generation_ready = bool(generator.client.status().get("ready"))
+            except Exception:
+                # Generation is an optional synthesis layer.  Retrieval plus
+                # the explicitly enabled extractive fallback must remain
+                # available while a local Ollama model is downloading or
+                # recovering from an OOM.
+                generation_ready = False
         Handler.runtime_diagnostics = {
             "service": "rag",
             "evidence_sufficiency_enabled": settings.evidence_sufficiency_enabled,
@@ -70,9 +81,9 @@ def main() -> None:
             "profanity_backend": getattr(rag_service.preprocessor.detector, "backend", "unknown"),
             "bm25_loaded": bool(getattr(retriever, "official", None) and getattr(retriever, "tickets", None)),
             "dense_configured": getattr(retriever, "official_dense", None) is not None,
-            "generator_available": rag_service.generator is not None,
-            "generator_backend": getattr(rag_service.generator, "backend", "extractive"),
-            "generator_model": getattr(rag_service.generator, "model_name", None),
+            "generator_available": generation_ready,
+            "generator_backend": getattr(generator, "backend", "extractive"),
+            "generator_model": getattr(generator, "model_name", None),
         }
     except ServiceNotReadyError as error:
         raise SystemExit(str(error)) from error

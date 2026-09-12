@@ -4,7 +4,7 @@ import pytest
 
 from src.application.clarification import ClarificationPolicy
 from src.application.pipeline import QueryPreprocessor, RAGService
-from src.generation.qwen import GenerationUnavailable, QwenGenerator, build_grounded_prompt, select_generation_evidence
+from src.generation.qwen import GenerationUnavailable, QwenGenerationClient, QwenGenerator, build_grounded_prompt, clean_generated_answer, select_generation_evidence
 from src.safety.profanity import ProfanityResult
 
 
@@ -62,7 +62,15 @@ def test_qwen_adapter_receives_query_and_returns_diagnostics():
     assert client.calls == 1
 
 
-@pytest.mark.parametrize("query", ["Как это исправить?", "Что делать с МЧД?"])
+def test_generated_answer_removes_only_the_redundant_model_template():
+    answer = clean_generated_answer(
+        "Прямой ответ: Проверьте обязательные поля в прайс-листе.\n\n"
+        "Подтверждённые действия: Восстановление файлов."
+    )
+    assert answer == "Проверьте обязательные поля в прайс-листе."
+
+
+@pytest.mark.parametrize("query", ["Что делать с МЧД?"])
 def test_qwen_is_not_called_when_clarification_precedes_retrieval(query):
     client = Client()
     result = RAGService(Retriever(), preprocessor=QueryPreprocessor(Detector()), generator=QwenGenerator(client)).ask(query)
@@ -107,6 +115,24 @@ def test_unsupported_numeric_generation_fails_grounding():
     assert result["diagnostics"]["grounding"]["reason"] == "unsupported_numeric_claim"
 
 
+def test_grounding_accepts_russian_inflections_from_the_same_evidence():
+    from src.generation.grounding import validate_grounding
+
+    result = validate_grounding(
+        "Чтобы создать оферту, откройте раздел оферт и выберите создание.",
+        [{"text": "Способы создания оферт: откройте раздел «Оферты» и нажмите «Создать оферту»."}],
+    )
+    assert result.grounded is True
+
+
+def test_grounding_ignores_numbered_list_markers_but_rejects_new_facts():
+    from src.generation.grounding import validate_grounding
+
+    evidence = [{"text": "Откройте раздел «Оферты» и нажмите «Создать оферту»."}]
+    assert validate_grounding("1. Откройте раздел оферт.\n2. Нажмите создать оферту.", evidence).grounded is True
+    assert validate_grounding("Срок составляет 5 месяцев.", evidence).reason == "unsupported_numeric_claim"
+
+
 @pytest.mark.parametrize("output", ["Недостаточно данных.", "Недостаточно информации", "Н", ""])
 def test_invalid_qwen_refusal_or_truncation_uses_grounded_extractive_fallback(output):
     client = Client(output)
@@ -140,6 +166,22 @@ def test_create_offer_refusal_falls_back_to_creation_procedure_not_definition():
 def test_prompt_keeps_source_identifiers_and_exact_question():
     prompt = build_grounded_prompt("Какой срок?", [{"chunk_id": "c", "document_id": "d", "text": "Три месяца"}])
     assert "chunk_id: c" in prompt and "document_id: d" in prompt and "Какой срок?" in prompt
+
+
+def test_ollama_client_sends_generation_policy_as_a_system_message(monkeypatch):
+    client = QwenGenerationClient("generation", 11434)
+    captured = {}
+
+    def request(_method, _path, payload, **_kwargs):
+        captured.update(payload)
+        return {"model": "qwen3:1.7b", "message": {"content": "Готово"}, "done_reason": "stop"}
+
+    monkeypatch.setattr(client, "_request", request)
+    client.generate(build_grounded_prompt("Вопрос?", [{"chunk_id": "c", "document_id": "d", "text": "Факт"}]), 32)
+    assert captured["messages"][0]["role"] == "system"
+    assert captured["messages"][1]["role"] == "user"
+    assert "Вопрос пользователя:" in captured["messages"][1]["content"]
+    assert captured["keep_alive"] == "15m"
 
 
 def test_generation_context_deduplicates_and_stays_within_budget():
@@ -200,6 +242,14 @@ def test_double_truncation_uses_grounded_fallback_and_keeps_diagnostics():
     assert generation["retry_attempted"] is True
     assert generation["truncated"] is True
     assert generation["finish_reason"] == "length"
+
+
+@pytest.mark.parametrize("output", ["Массовая заг", "Для этого необходимо пер", "Перейдите в раздел «"])
+def test_obvious_unfinished_endings_are_never_valid_generated_answers(output):
+    from src.generation.qwen import QwenGenerator
+
+    assert QwenGenerator._invalid_reason(output, generated_tokens=12, max_new_tokens=128,
+                                         truncated=False, finish_reason="stop") == "truncated_output"
 
 
 def test_generation_context_prefers_query_aligned_approved_evidence():

@@ -6,7 +6,7 @@ from typing import Any
 
 from src.application.factory import build_rag_service
 from src.core.config import Settings
-from src.safety.profanity import ProfanityModelLoadError
+from src.moderation.profanity import detect_profanity
 
 
 class ServiceNotReadyError(RuntimeError):
@@ -21,16 +21,22 @@ class RAGAPI:
     def from_settings(cls, settings: Settings) -> "RAGAPI":
         try:
             return cls(service=build_rag_service(settings))
-        except (FileNotFoundError, ProfanityModelLoadError) as error:
+        except FileNotFoundError as error:
             raise ServiceNotReadyError(f"RAG startup dependency is unavailable: {error}") from error
 
     def process(self, payload: dict[str, Any]) -> dict[str, Any]:
         query = str(payload.get("query", "")).strip()
         if not query:
             raise ValueError("query is required")
-        user_messages = _user_messages(payload.get("context"))
-        retrieval_query = "\n".join(dict.fromkeys([*user_messages, query]))
-        result = self.service.ask(retrieval_query)
+        if payload.get("moderation_only") is True:
+            prepared = self.service.preprocessor.process(query)
+            if prepared["moderation"]["contains_profanity"]:
+                return {"status": "blocked", "blocked_reason": self.service.ask(query)["answer"], "sources": []}
+            # The backend uses this endpoint solely to decide whether it may
+            # append a message to an operator ticket.  Do not retrieve or
+            # generate an answer for clean follow-ups.
+            return {"status": "answered", "answer": "", "sources": []}
+        result = self.service.ask(_contextual_query(query, payload.get("context")))
         sources = [_source(item) for item in result.get("sources", [])]
         topic = _topic(result.get("sources", []))
         status = result.get("status")
@@ -67,19 +73,43 @@ class RAGAPI:
         raise RuntimeError(f"unsupported RAG status: {status!r}")
 
 
-def _user_messages(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    messages = []
-    for item in value:
+def _contextual_query(query: str, context: Any) -> str:
+    """Attach one safe prior user topic only for a short follow-up.
+
+    The current message remains the only message that is moderated as a new
+    input.  Profane history is never copied into the query, which fixes the
+    earlier poisoned-conversation bug while preserving context for requests
+    such as "а точнее" or "добавить" after a question about МЧД.
+    """
+    normalized = " ".join(query.casefold().split())
+    tokens = normalized.split()
+    explicit_follow_up = (
+        normalized in {"а точнее", "точнее", "подробнее", "детальнее", "как это", "а если", "а дальше"}
+        or (len(tokens) <= 2 and any(token in {"добавить", "заменить", "отозвать", "подписать", "загрузить", "да"} for token in tokens))
+    )
+    # A short status report ("выходит ошибка", "не работает") needs the
+    # preceding user topic to formulate a useful clarification.  It is not an
+    # answer by itself, so never send it through retrieval without that topic.
+    contextual_status = len(tokens) <= 4 and (
+        normalized.startswith(("выходит ошиб", "появилась ошиб", "та же ошиб", "снова ошиб"))
+        or normalized in {"работа", "ошибка", "не работает", "не получается", "не могу", "не входит"}
+    )
+    if not (explicit_follow_up or contextual_status) or not isinstance(context, list):
+        return query
+    skipped_current = False
+    for item in reversed(context):
         if not isinstance(item, dict) or item.get("sender_type") != "USER":
             continue
-        text = str(item.get("text", "")).strip()
-        if text:
-            messages.append(text)
-    return messages
-
-
+        previous = str(item.get("text", "")).strip()
+        if not previous:
+            continue
+        if not skipped_current and previous == query:
+            skipped_current = True
+            continue
+        if detect_profanity(previous)["contains_profanity"]:
+            continue
+        return f"{previous}\nУточнение к предыдущей теме: {query}"
+    return query
 def _source(item: dict[str, Any]) -> dict[str, Any]:
     document = str(item.get("source_path") or item.get("source") or item.get("document_id") or "knowledge-base")
     page = item.get("page_start") if item.get("page_start") is not None else item.get("page")

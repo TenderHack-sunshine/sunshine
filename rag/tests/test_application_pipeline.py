@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.application.pipeline import ConfidenceEvaluator, RAGService, SupportRouter
 from src.core.config import Settings
 from src.routing.normalization import normalize_query
@@ -38,11 +40,18 @@ def test_profanity_is_a_hard_exit_before_routing_or_retrieval():
     assert result["diagnostics"]["retrieval_mode"] == "NONE"
 
 
-def test_underspecified_error_needs_clarification_before_retrieval():
+def test_short_error_without_a_subject_requires_context_before_retrieval():
     retriever = FakeRetriever([_source()])
     result = RAGService(retriever).ask("не работает")
     assert result["status"] == "NEEDS_CLARIFICATION"
     assert retriever.technical_calls == []
+
+
+def test_specific_short_technical_failure_reaches_retrieval():
+    retriever = FakeRetriever([_source()])
+    result = RAGService(retriever).ask("\u043d\u0435 \u043f\u043e\u0434\u043f\u0438\u0441\u044b\u0432\u0430\u0435\u0442\u0441\u044f \u043e\u0444\u0435\u0440\u0442\u0430")
+    assert result["status"] == "ANSWER"
+    assert retriever.technical_calls == [True]
 
 
 def test_routes_l1_l2_and_l3_deterministically():
@@ -89,7 +98,7 @@ def test_optional_reranker_can_reorder_hybrid_candidates():
     assert result["sources"][0]["chunk_id"] == "second"
 
 
-def test_partial_qdrant_index_is_ignored_and_complete_index_is_activated(monkeypatch):
+def test_partial_qdrant_index_is_ignored_and_complete_index_is_activated(monkeypatch, tmp_path):
     import src.application.factory as factory
 
     class Store:
@@ -105,15 +114,44 @@ def test_partial_qdrant_index_is_ignored_and_complete_index_is_activated(monkeyp
             return self.points
 
     monkeypatch.setattr(factory, "HttpQdrantStore", Store)
-    settings = Settings(official_expected_points=2)
+    # This is a legacy-index compatibility test.  Isolate it from a manifest
+    # produced by an integration run in the repository data directory.
+    settings = Settings(official_expected_points=2, official_index_manifest_path=tmp_path / "absent_manifest.json")
     assert factory.official_dense_if_ready(settings) is None
     Store.points = 2
     assert factory.official_dense_if_ready(settings) is not None
 
 
-def test_ambiguous_query_uses_clarification_policy_before_retrieval():
+def test_deferred_dense_retriever_activates_after_index_completion(monkeypatch, tmp_path):
+    import src.application.factory as factory
+    from src.retrieval.official_dense import DenseUnavailable
+
+    class Store:
+        points = 1
+
+        def __init__(self, *_args):
+            pass
+
+        def collection_exists(self):
+            return True
+
+        def count(self):
+            return self.points
+
+    monkeypatch.setattr(factory, "HttpQdrantStore", Store)
+    retriever = factory.DeferredOfficialDenseRetriever(
+        Settings(official_expected_points=2, official_index_manifest_path=tmp_path / "absent_manifest.json")
+    )
+    with pytest.raises(DenseUnavailable):
+        retriever.retrieve("\u0432\u043e\u043f\u0440\u043e\u0441")
+    Store.points = 2
+    monkeypatch.setattr(retriever.delegate, "retrieve", lambda *_args, **_kwargs: ["ready"])
+    assert retriever.retrieve("\u0432\u043e\u043f\u0440\u043e\u0441") == ["ready"]
+
+
+def test_vague_topic_uses_clarification_policy_before_retrieval():
     retriever = FakeRetriever([_source()])
-    result = RAGService(retriever).ask("не работает")
+    result = RAGService(retriever).ask("Работа с МЧД")
     assert result["status"] == "NEEDS_CLARIFICATION"
     assert retriever.technical_calls == []
 

@@ -72,6 +72,31 @@ func (s *SupportService) AddUserMessage(ctx context.Context, actor Actor, reques
 		return domain.SupportRequest{}, nil, err
 	}
 	if request.Status == domain.RequestStatusEscalated {
+		// A ticket must not become a moderation bypass.  Check every new
+		// message with the same RAG-side filter used before escalation, while
+		// deliberately avoiding retrieval/generation for an operator follow-up.
+		moderation, err := s.rag.Process(ctx, port.ProcessRequest{
+			Query: message.Text, ConversationID: request.ID, ModerationOnly: true,
+		})
+		if err != nil {
+			return domain.SupportRequest{}, nil, ErrRAGUnavailable
+		}
+		if moderation.Status == domain.AIStatusBlocked {
+			blockedText := strings.TrimSpace(moderation.BlockedReason)
+			if blockedText == "" {
+				blockedText = "Пожалуйста, переформулируйте сообщение без нецензурной лексики."
+			}
+			blockedID, err := s.newID()
+			if err != nil {
+				return domain.SupportRequest{}, nil, err
+			}
+			blocked := domain.Message{ID: blockedID, RequestID: request.ID, Sender: domain.SenderAI, Text: blockedText, CreatedAt: s.now().UTC()}
+			if err := s.store.AddMessage(ctx, blocked); err != nil {
+				return domain.SupportRequest{}, nil, err
+			}
+			// Do not refresh the operator ticket with rejected content.
+			return request, nil, nil
+		}
 		ackID, err := s.newID()
 		if err != nil {
 			return domain.SupportRequest{}, nil, err
@@ -155,7 +180,10 @@ func (s *SupportService) resultArtifacts(request domain.SupportRequest, conversa
 	case domain.AIStatusBlocked:
 		messageText = strings.TrimSpace(result.BlockedReason)
 	case domain.AIStatusEscalated:
-		messageText = "Ваше обращение передано специалисту технической поддержки."
+		messageText = strings.TrimSpace(result.Answer)
+		if messageText == "" {
+			messageText = "К сожалению, ответ требует участия специалиста. Я передал обращение в техническую поддержку."
+		}
 	default:
 		return nil, nil, ErrInvalidRAGResult
 	}

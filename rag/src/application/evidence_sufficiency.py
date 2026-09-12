@@ -94,7 +94,9 @@ class EvidenceSufficiencyChecker:
         if not candidates:
             return EvidenceSufficiencyResult(False, "NO_EVIDENCE")
         query_tokens = {_stem(token) for token in _TOKEN.findall(query.lower())}
-        evidence_text = candidates[0].get("text", "")
+        # Evaluate precisely the complete context that is allowed to reach the
+        # generator, not merely retrieval rank #1.
+        evidence_text = "\n\n".join(str(candidate.get("text", "")) for candidate in candidates)
         evidence_terms = _terms(evidence_text)
         if query_tokens & {_stem(head) for head in _NAVIGATION_HEADS}:
             has_navigation = any(any(term.startswith(marker) for term in evidence_terms) for marker in _NAVIGATION_EVIDENCE)
@@ -111,6 +113,7 @@ class EvidenceSufficiencyChecker:
         asks_about_consequences = any(
             token.startswith("\u043f\u043e\u0441\u043b\u0435\u0434\u0441\u0442\u0432")
             or token.startswith("\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432")
+            or token.startswith("\u044e\u0440\u0438\u0434\u0438\u0447")
             for token in query_tokens
         )
         has_consequence_evidence = any(
@@ -120,6 +123,28 @@ class EvidenceSufficiencyChecker:
         )
         if asks_about_consequences and not has_consequence_evidence:
             return EvidenceSufficiencyResult(False, "CONSEQUENCE_NOT_EXPLICIT")
+        if asks_about_consequences:
+            # A how-to manual can describe an upload button but cannot, by
+            # itself, establish legal force or a sanction.  A historical ticket
+            # is never normative evidence either.  Until a dedicated
+            # normative-source type is added, only the official KB (or an
+            # explicitly marked normative record) can support this answer.
+            normative_candidates = [
+                candidate for candidate in candidates
+                if candidate.get("source_type") == "official_kb"
+                or bool((candidate.get("metadata") or {}).get("normative_source"))
+            ]
+            normative_text = "\n".join(str(candidate.get("text", "")) for candidate in normative_candidates)
+            normative_terms = _terms(normative_text)
+            if not normative_candidates:
+                return EvidenceSufficiencyResult(False, "CONSEQUENCE_REQUIRES_NORMATIVE_EVIDENCE")
+            if not any(
+                term.startswith("\u043f\u043e\u0441\u043b\u0435\u0434\u0441\u0442\u0432")
+                or term.startswith("\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432")
+                or term.startswith("\u044e\u0440\u0438\u0434\u0438\u0447")
+                for term in normative_terms
+            ):
+                return EvidenceSufficiencyResult(False, "CONSEQUENCE_NOT_IN_NORMATIVE_EVIDENCE")
         if any(term.startswith("\u043f\u043e\u0447\u0435\u043c") for term in query_tokens):
             causal_subject = {
                 term for term in query_tokens if len(term) >= 5 and term not in _WHY_QUERY_STOP

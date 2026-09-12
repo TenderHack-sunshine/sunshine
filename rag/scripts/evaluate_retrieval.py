@@ -3,6 +3,7 @@ from __future__ import annotations
 """Offline labelled retrieval evaluation; does not depend on answer generation."""
 
 import argparse
+from collections import Counter
 import json
 import statistics
 import sys
@@ -194,7 +195,11 @@ def evaluate(cases: list[dict], service, rerank: bool = False, end_to_end: bool 
             failures.append({"query": row["query"], "hits_at_10": hits})
     latency_report = {name: {"p50": percentile(values, .5), "p95": percentile(values, .95)} for name, values in latencies.items()}
     dangerous = [row["query"] for row in diagnostics if normalized_decision(row["expected"].get("expected_decision")) == "ESCALATE_TO_OPERATOR" and row.get("actual_decision") == "ANSWER"]
-    return {"metrics": metrics, "by_route": by_route, "by_category": by_category, "routing": accuracy(routing_rows), "decisions": accuracy(decision_rows),
+    # Never silently promote model-reviewed or automatically-created rows to
+    # ground truth. Legacy rows without this field stay explicitly UNSPECIFIED.
+    label_provenance = Counter(str(case.get("label_provenance", "UNSPECIFIED")).upper() for case in cases)
+    return {"metrics": metrics, "by_route": by_route, "by_category": by_category,
+            "label_provenance": dict(sorted(label_provenance.items())), "routing": accuracy(routing_rows), "decisions": accuracy(decision_rows),
             "latency_ms": latency_report, "diagnostics": diagnostics, "failure_analysis": failures, "dangerous_decision_cases": dangerous, "comparison": comparisons}
 
 
@@ -207,7 +212,9 @@ def markdown_report(report: dict) -> str:
     for name, levels in report["metrics"].items():
         for level, values in levels.items():
             lines.append(f"| {name} | {level} | {_fmt(values['recall_at_1'])} | {_fmt(values['recall_at_3'])} | {_fmt(values['recall_at_5'])} | {_fmt(values['recall_at_10'])} | {_fmt(values['mrr_at_10'])} | {values['labelled_queries']} |")
-    lines += ["", "## Routing and decisions", "", f"- Route accuracy: {_fmt(report['routing']['accuracy'])} ({report['routing']['labelled_queries']} labels)", f"- Decision accuracy: {_fmt(report['decisions']['accuracy'])} ({report['decisions']['labelled_queries']} labels)", "", "## Retrieval comparison", ""]
+    lines += ["", "## Label provenance", ""]
+    lines += [f"- {name}: {count}" for name, count in report.get("label_provenance", {}).items()]
+    lines += ["", "`MODEL_REVIEWED`, `SILVER`, `PENDING_HUMAN_REVIEW`, and `UNSPECIFIED` rows are diagnostics, not proven ground truth. Only `HUMAN_LABELLED` rows support a human-labelled quality claim.", "", "## Routing and decisions", "", f"- Route accuracy: {_fmt(report['routing']['accuracy'])} ({report['routing']['labelled_queries']} labels)", f"- Decision accuracy: {_fmt(report['decisions']['accuracy'])} ({report['decisions']['labelled_queries']} labels)", "", "## Retrieval comparison", ""]
     lines += [f"- {key.replace('_', ' ')}: {value}" for key, value in report["comparison"].items()]
     lines += ["", "## Latency (ms, p50/p95)", ""]
     lines += [f"- {name}: {_fmt(values['p50'])} / {_fmt(values['p95'])}" for name, values in report["latency_ms"].items()]
@@ -234,6 +241,7 @@ def main() -> None:
             print(f"{name:<18} {level:<9} {_fmt(values['recall_at_1']):<6} {_fmt(values['recall_at_3']):<6} {_fmt(values['recall_at_5']):<6} {_fmt(values['recall_at_10']):<6} {_fmt(values['mrr_at_10']):<7} {values['labelled_queries']}")
     print("Latency ms (p50/p95): " + ", ".join(f"{name}={_fmt(data['p50'])}/{_fmt(data['p95'])}" for name, data in report["latency_ms"].items()))
     print(f"Route accuracy: {_fmt(report['routing']['accuracy'])} ({report['routing']['labelled_queries']} labels); Decision accuracy: {_fmt(report['decisions']['accuracy'])} ({report['decisions']['labelled_queries']} labels)")
+    print("Label provenance: " + ", ".join(f"{key}={value}" for key, value in report["label_provenance"].items()))
     print(f"Failure-analysis cases: {len(report['failure_analysis'])}")
     print("Comparison: " + ", ".join(f"{key}={value}" for key, value in report["comparison"].items()))
     if args.output:

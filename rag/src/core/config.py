@@ -27,15 +27,21 @@ class Settings:
     dense_worker_port: int = int(os.getenv("DENSE_WORKER_PORT", "8765"))
     generator_backend: str = os.getenv("GENERATOR_BACKEND", "extractive").strip().lower()
     generation_worker_host: str = os.getenv("GENERATION_WORKER_HOST", "127.0.0.1")
-    generation_worker_port: int = int(os.getenv("GENERATION_WORKER_PORT", "8766"))
-    generation_timeout_seconds: float = float(os.getenv("GENERATION_TIMEOUT_SECONDS", "120"))
-    generation_max_new_tokens: int = int(os.getenv("GENERATION_MAX_NEW_TOKENS", "128"))
-    generation_max_seconds: float = float(os.getenv("GENERATION_MAX_SECONDS", "90"))
-    generation_max_context_chars: int = int(os.getenv("GENERATION_MAX_CONTEXT_CHARS", "12000"))
-    generation_max_evidence_chunks: int = int(os.getenv("GENERATION_MAX_EVIDENCE_CHUNKS", "1"))
-    generation_model_name: str = os.getenv("GENERATION_MODEL_NAME", "Qwen2.5-1.5B-Instruct")
+    generation_worker_port: int = int(os.getenv("GENERATION_WORKER_PORT", "11434"))
+    # The answer model is intentionally allowed almost the full one-minute UI
+    # budget.  Values below used to time out at 10–12 seconds and trigger the
+    # extractive fallback, which looked like a raw search result to users.
+    generation_timeout_seconds: float = float(os.getenv("GENERATION_TIMEOUT_SECONDS", "52"))
+    generation_max_new_tokens: int = int(os.getenv("GENERATION_MAX_NEW_TOKENS", "256"))
+    generation_max_seconds: float = float(os.getenv("GENERATION_MAX_SECONDS", "50"))
+    generation_max_context_chars: int = int(os.getenv("GENERATION_MAX_CONTEXT_CHARS", "2400"))
+    generation_max_evidence_chunks: int = int(os.getenv("GENERATION_MAX_EVIDENCE_CHUNKS", "2"))
+    generation_model_name: str = os.getenv("GENERATION_MODEL_NAME", "Qwen3-1.7B")
+    generation_ollama_model: str = os.getenv("GENERATION_OLLAMA_MODEL", "qwen3:1.7b")
     allow_extractive_generation_fallback: bool = os.getenv("ALLOW_EXTRACTIVE_GENERATION_FALLBACK", "0").lower() in {"1", "true", "yes"}
     official_expected_points: int = int(os.getenv("OFFICIAL_EXPECTED_POINTS", "1073"))
+    official_index_manifest_path: Path | None = None
+    faq_cards_path: Path | None = None
     rerank_enabled: bool = os.getenv("RERANKER_ENABLED", os.getenv("RERANK_ENABLED", "0")).lower() in {"1", "true", "yes"}
     hybrid_rerank_top_n: int = int(os.getenv("HYBRID_RERANK_TOP_N", "20"))
     evidence_max_per_document: int = int(os.getenv("EVIDENCE_MAX_PER_DOCUMENT", "2"))
@@ -102,6 +108,8 @@ class Settings:
             raise ValueError("Clarification-policy token limits must be positive")
         object.__setattr__(self, "data_dir", _path_env("DATA_DIR", self.root_dir / "data") if self.data_dir is None else Path(self.data_dir))
         object.__setattr__(self, "model_dir", _path_env("MODEL_DIR", self.root_dir / "models") if self.model_dir is None else Path(self.model_dir))
+        object.__setattr__(self, "faq_cards_path", _path_env("FAQ_CARDS_PATH", self.data_dir / "processed" / "faq" / "cards.jsonl") if self.faq_cards_path is None else Path(self.faq_cards_path))
+        object.__setattr__(self, "official_index_manifest_path", _path_env("OFFICIAL_INDEX_MANIFEST_PATH", self.processed_dir / "index" / "official_index_manifest.json") if self.official_index_manifest_path is None else Path(self.official_index_manifest_path))
 
     @property
     def manuals_dir(self) -> Path:

@@ -532,7 +532,7 @@ func userResponse(request domain.SupportRequest, ticket *domain.Ticket) supportR
 		if ticket != nil {
 			response.TicketID = ticket.ID
 		}
-		response.Support = "Техническая поддержка"
+		response.Support = request.AIAnswer
 		response.TicketStatus = "Ожидает специалиста"
 	}
 	return response
