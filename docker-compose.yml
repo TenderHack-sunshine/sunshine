@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     environment:
       DATA_DIR: /app/data
+      EVIDENCE_SUFFICIENCY_ENABLED: "1"
     volumes:
       - ./rag/data:/app/data:ro
     expose:
@@ -22,7 +23,7 @@ services:
       POSTGRES_USER: sunshine
       POSTGRES_PASSWORD: sunshine
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -39,6 +40,7 @@ services:
     environment:
       DATABASE_URL: postgres://sunshine:sunshine@postgres:5432/sunshine?sslmode=disable
       RAG_SERVICE_URL: http://rag:8000
+      JWT_SECRET: ${JWT_SECRET:-sunshine-demo-jwt-secret-change-before-production-2026}
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +55,14 @@ services:
       DATABASE_URL: postgres://sunshine:sunshine@postgres:5432/sunshine?sslmode=disable
       RAG_SERVICE_URL: http://rag:8000
       RAG_SERVICE_TIMEOUT: ${RAG_SERVICE_TIMEOUT:-30s}
+      JWT_SECRET: ${JWT_SECRET:-sunshine-demo-jwt-secret-change-before-production-2026}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_DISPLAY_NAME: ${ADMIN_DISPLAY_NAME:-Администратор}
     ports:
       - "${API_HOST_PORT:-8081}:8080"
     read_only: true
@@ -63,6 +73,17 @@ services:
         condition: service_completed_successfully
       rag:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:${API_HOST_PORT:-8081}
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    depends_on:
+      assistant-api:
+        condition: service_started
 
 volumes:
   postgres_data:

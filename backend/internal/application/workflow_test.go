@@ -58,23 +58,30 @@ func TestTicketLifecycleFeedbackAnalyticsAndAIUnavailable(t *testing.T) {
 	}
 
 	tickets := NewTicketService(store)
-	if _, err := tickets.Answer(context.Background(), "operator-1", ticket.ID, "Ответ"); !errors.Is(err, ErrInvalidState) {
+	operator := Actor{UserID: "operator-1", Role: domain.RoleTechSpecialist}
+	if _, err := tickets.Answer(context.Background(), operator, ticket.ID, "Ответ"); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("answer before take = %v, want invalid state", err)
 	}
-	taken, err := tickets.Take(context.Background(), "operator-1", ticket.ID)
+	taken, err := tickets.Take(context.Background(), operator, ticket.ID)
 	if err != nil || taken.Status != domain.TicketStatusInProgress {
 		t.Fatalf("take: ticket=%+v err=%v", taken, err)
 	}
-	answered, err := tickets.Answer(context.Background(), "operator-1", ticket.ID, "Переустановите сертификат")
+	answered, err := tickets.Answer(context.Background(), operator, ticket.ID, "Переустановите сертификат")
 	if err != nil || answered.Status != domain.TicketStatusAnswered {
 		t.Fatalf("answer: ticket=%+v err=%v", answered, err)
 	}
-	closed, err := tickets.Close(context.Background(), "operator-1", ticket.ID)
+	closed, err := tickets.Close(context.Background(), operator, ticket.ID)
 	if err != nil || closed.Status != domain.TicketStatusClosed {
 		t.Fatalf("close: ticket=%+v err=%v", closed, err)
 	}
-	if _, err := tickets.Answer(context.Background(), "operator-1", ticket.ID, "Повторный ответ"); !errors.Is(err, ErrInvalidState) {
+	if _, err := tickets.Answer(context.Background(), operator, ticket.ID, "Повторный ответ"); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("answer after close = %v, want invalid state", err)
+	}
+	if _, err := tickets.Take(context.Background(), Actor{UserID: "user-1", Role: domain.RoleUser}, ticket.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("plain user must not take tickets, got %v", err)
+	}
+	if _, err := tickets.Take(context.Background(), Actor{UserID: "other-line", Role: domain.RoleTechSpecialist, Line: domain.SupportLineL1}, ticket.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("specialist scoped to a different line must not take this ticket, got %v", err)
 	}
 
 	feedback, err := NewFeedbackService(store).Create(context.Background(), Actor{UserID: "user-1"}, request.ID, 2, "Проблема осталась", false)
@@ -122,14 +129,22 @@ func (a *fakeRAG) Process(_ context.Context, _ port.ProcessRequest) (port.Proces
 }
 
 type fakeStore struct {
-	requests map[string]domain.SupportRequest
-	messages map[string][]domain.Message
-	tickets  map[string]domain.Ticket
-	feedback map[string]domain.Feedback
+	requests      map[string]domain.SupportRequest
+	messages      map[string][]domain.Message
+	tickets       map[string]domain.Ticket
+	feedback      map[string]domain.Feedback
+	users         map[string]domain.User
+	usersByEmail  map[string]string
+	refreshTokens map[string]domain.RefreshToken
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{requests: map[string]domain.SupportRequest{}, messages: map[string][]domain.Message{}, tickets: map[string]domain.Ticket{}, feedback: map[string]domain.Feedback{}}
+	return &fakeStore{
+		requests: map[string]domain.SupportRequest{}, messages: map[string][]domain.Message{},
+		tickets: map[string]domain.Ticket{}, feedback: map[string]domain.Feedback{},
+		users: map[string]domain.User{}, usersByEmail: map[string]string{},
+		refreshTokens: map[string]domain.RefreshToken{},
+	}
 }
 func (s *fakeStore) CreateSupportRequest(_ context.Context, r domain.SupportRequest, m domain.Message) error {
 	s.requests[r.ID] = r
@@ -195,12 +210,16 @@ func (s *fakeStore) MarkRAGFailed(_ context.Context, id string) error {
 	s.requests[id] = request
 	return nil
 }
-func (s *fakeStore) ListTickets(_ context.Context, status *domain.TicketStatus) ([]domain.Ticket, error) {
+func (s *fakeStore) ListTickets(_ context.Context, status *domain.TicketStatus, line *domain.SupportLine) ([]domain.Ticket, error) {
 	items := []domain.Ticket{}
 	for _, ticket := range s.tickets {
-		if status == nil || ticket.Status == *status {
-			items = append(items, ticket)
+		if status != nil && ticket.Status != *status {
+			continue
 		}
+		if line != nil && ticket.SupportLevel != string(*line) {
+			continue
+		}
+		items = append(items, ticket)
 	}
 	return items, nil
 }
@@ -298,6 +317,96 @@ func (s *fakeStore) Analytics(_ context.Context) (port.AnalyticsSnapshot, error)
 }
 func (s *fakeStore) OperationalAnalytics(ctx context.Context) (port.OperationalAnalyticsSnapshot, error) {
 	return port.OperationalAnalyticsSnapshot{}, nil
+}
+
+func (s *fakeStore) CreateUser(_ context.Context, user domain.User) error {
+	if _, exists := s.usersByEmail[user.Email]; exists && user.Email != "" {
+		return ErrEmailTaken
+	}
+	s.users[user.ID] = user
+	if user.Email != "" {
+		s.usersByEmail[user.Email] = user.ID
+	}
+	return nil
+}
+func (s *fakeStore) GetUserByEmail(_ context.Context, email string) (domain.User, error) {
+	id, ok := s.usersByEmail[email]
+	if !ok {
+		return domain.User{}, ErrNotFound
+	}
+	return s.users[id], nil
+}
+func (s *fakeStore) GetUserByID(_ context.Context, id string) (domain.User, error) {
+	user, ok := s.users[id]
+	if !ok {
+		return domain.User{}, ErrNotFound
+	}
+	return user, nil
+}
+func (s *fakeStore) ListUsers(_ context.Context) ([]domain.User, error) {
+	users := make([]domain.User, 0, len(s.users))
+	for _, user := range s.users {
+		users = append(users, user)
+	}
+	return users, nil
+}
+func (s *fakeStore) ListSpecialistsByStatus(_ context.Context, status domain.SpecialistStatus) ([]domain.User, error) {
+	users := make([]domain.User, 0)
+	for _, user := range s.users {
+		if user.Role == domain.RoleTechSpecialist && user.SpecialistStatus == status {
+			users = append(users, user)
+		}
+	}
+	return users, nil
+}
+func (s *fakeStore) UpdateUserRole(_ context.Context, userID string, role domain.Role, line domain.SupportLine, status domain.SpecialistStatus) error {
+	user, ok := s.users[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	user.Role, user.Line, user.SpecialistStatus = role, line, status
+	s.users[userID] = user
+	return nil
+}
+func (s *fakeStore) UpdateSpecialistStatus(_ context.Context, userID string, status domain.SpecialistStatus) error {
+	user, ok := s.users[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	user.SpecialistStatus = status
+	s.users[userID] = user
+	return nil
+}
+func (s *fakeStore) CreateRefreshToken(_ context.Context, token domain.RefreshToken) error {
+	s.refreshTokens[token.TokenHash] = token
+	return nil
+}
+func (s *fakeStore) GetRefreshToken(_ context.Context, tokenHash string) (domain.RefreshToken, error) {
+	token, ok := s.refreshTokens[tokenHash]
+	if !ok {
+		return domain.RefreshToken{}, ErrNotFound
+	}
+	return token, nil
+}
+func (s *fakeStore) RevokeRefreshToken(_ context.Context, tokenHash string) error {
+	token, ok := s.refreshTokens[tokenHash]
+	if !ok {
+		return nil
+	}
+	now := time.Now().UTC()
+	token.RevokedAt = &now
+	s.refreshTokens[tokenHash] = token
+	return nil
+}
+func (s *fakeStore) RevokeUserRefreshTokens(_ context.Context, userID string) error {
+	now := time.Now().UTC()
+	for hash, token := range s.refreshTokens {
+		if token.UserID == userID && token.RevokedAt == nil {
+			token.RevokedAt = &now
+			s.refreshTokens[hash] = token
+		}
+	}
+	return nil
 }
 
 var _ port.Store = (*fakeStore)(nil)

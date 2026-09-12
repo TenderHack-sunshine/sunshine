@@ -36,7 +36,7 @@ type Store interface {
 	ApplyRAGResult(ctx context.Context, requestID string, result ProcessResponse, aiMessage *domain.Message, ticket *domain.Ticket) error
 	MarkRAGFailed(ctx context.Context, requestID string) error
 
-	ListTickets(ctx context.Context, status *domain.TicketStatus) ([]domain.Ticket, error)
+	ListTickets(ctx context.Context, status *domain.TicketStatus, line *domain.SupportLine) ([]domain.Ticket, error)
 	GetTicket(ctx context.Context, ticketID string) (domain.Ticket, error)
 	TakeTicket(ctx context.Context, ticketID, operatorID string) (domain.Ticket, error)
 	AnswerTicket(ctx context.Context, ticketID, operatorID, answer string, message domain.Message) (domain.Ticket, error)
@@ -44,6 +44,21 @@ type Store interface {
 	CreateFeedback(ctx context.Context, feedback domain.Feedback) error
 	Analytics(ctx context.Context) (AnalyticsSnapshot, error)
 	OperationalAnalytics(ctx context.Context) (OperationalAnalyticsSnapshot, error)
+
+	// Accounts and role management.
+	CreateUser(ctx context.Context, user domain.User) error
+	GetUserByEmail(ctx context.Context, email string) (domain.User, error)
+	GetUserByID(ctx context.Context, id string) (domain.User, error)
+	ListUsers(ctx context.Context) ([]domain.User, error)
+	ListSpecialistsByStatus(ctx context.Context, status domain.SpecialistStatus) ([]domain.User, error)
+	UpdateUserRole(ctx context.Context, userID string, role domain.Role, line domain.SupportLine, status domain.SpecialistStatus) error
+	UpdateSpecialistStatus(ctx context.Context, userID string, status domain.SpecialistStatus) error
+
+	// Refresh-token sessions.
+	CreateRefreshToken(ctx context.Context, token domain.RefreshToken) error
+	GetRefreshToken(ctx context.Context, tokenHash string) (domain.RefreshToken, error)
+	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	RevokeUserRefreshTokens(ctx context.Context, userID string) error
 }
 
 type AnalyticsSnapshot struct {

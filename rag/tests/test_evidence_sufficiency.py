@@ -39,6 +39,14 @@ def test_near_miss_exact_penalty_without_explicit_penalty_abstains():
     assert result["diagnostics"]["evidence_sufficiency"]["reason"] == "REQUESTED_FACT_NOT_EXPLICIT"
 
 
+def test_unrelated_why_question_abstains_instead_of_reusing_a_generic_portal_match():
+    result = _service("Если не отображается страница котировочной сессии, обновите страницу и перезапустите браузер.").ask(
+        "почему портал не поддерживает телепортацию заявок на марс"
+    )
+    assert result["status"] == "ESCALATE_TO_OPERATOR"
+    assert result["diagnostics"]["evidence_sufficiency"]["reason"] == "REQUESTED_FACT_NOT_EXPLICIT"
+
+
 def test_explicit_navigation_evidence_keeps_answerable_mchd_request_answerable():
     result = _service("В разделе Профиль пользователя откройте доверенности, нажмите Добавить МЧД и загрузите XML.").ask("как добавить МЧД")
     assert result["status"] == "ANSWER"

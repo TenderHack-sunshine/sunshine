@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/TenderHack-sunshine/sunshine/backend/internal/application"
 	"github.com/TenderHack-sunshine/sunshine/backend/internal/domain"
@@ -146,12 +147,20 @@ func (s *PostgresStore) MarkRAGFailed(ctx context.Context, requestID string) err
 	return nil
 }
 
-func (s *PostgresStore) ListTickets(ctx context.Context, status *domain.TicketStatus) ([]domain.Ticket, error) {
+func (s *PostgresStore) ListTickets(ctx context.Context, status *domain.TicketStatus, line *domain.SupportLine) ([]domain.Ticket, error) {
 	query := `SELECT id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at FROM tickets`
+	conditions := []string{}
 	args := []any{}
 	if status != nil {
-		query += ` WHERE status=$1`
 		args = append(args, *status)
+		conditions = append(conditions, fmt.Sprintf("status=$%d", len(args)))
+	}
+	if line != nil {
+		args = append(args, string(*line))
+		conditions = append(conditions, fmt.Sprintf("support_level=$%d", len(args)))
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 	query += ` ORDER BY created_at DESC`
 	rows, err := s.pool.Query(ctx, query, args...)
@@ -270,6 +279,116 @@ func (s *PostgresStore) Analytics(ctx context.Context) (port.AnalyticsSnapshot, 
 		return result, err
 	}
 	return result, nil
+}
+
+func (s *PostgresStore) CreateUser(ctx context.Context, user domain.User) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO users (id,email,password_hash,display_name,role,line,specialist_status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		user.ID, user.Email, user.PasswordHash, user.DisplayName, user.Role, user.Line, user.SpecialistStatus, user.CreatedAt, user.UpdatedAt)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return application.ErrEmailTaken
+	}
+	return err
+}
+
+func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (domain.User, error) {
+	return scanUser(s.pool.QueryRow(ctx, `SELECT id,email,password_hash,display_name,role,line,specialist_status,created_at,updated_at FROM users WHERE email=$1`, email))
+}
+
+func (s *PostgresStore) GetUserByID(ctx context.Context, id string) (domain.User, error) {
+	return scanUser(s.pool.QueryRow(ctx, `SELECT id,email,password_hash,display_name,role,line,specialist_status,created_at,updated_at FROM users WHERE id=$1`, id))
+}
+
+func (s *PostgresStore) ListUsers(ctx context.Context) ([]domain.User, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id,email,password_hash,display_name,role,line,specialist_status,created_at,updated_at FROM users WHERE email<>'' ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]domain.User, 0)
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		user.PasswordHash = ""
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (s *PostgresStore) ListSpecialistsByStatus(ctx context.Context, status domain.SpecialistStatus) ([]domain.User, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id,email,password_hash,display_name,role,line,specialist_status,created_at,updated_at FROM users WHERE role='tech_specialist' AND specialist_status=$1 ORDER BY created_at`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]domain.User, 0)
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		user.PasswordHash = ""
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (s *PostgresStore) UpdateUserRole(ctx context.Context, userID string, role domain.Role, line domain.SupportLine, status domain.SpecialistStatus) error {
+	command, err := s.pool.Exec(ctx, `UPDATE users SET role=$2,line=$3,specialist_status=$4,updated_at=NOW() WHERE id=$1`, userID, role, line, status)
+	if err != nil {
+		return err
+	}
+	if command.RowsAffected() == 0 {
+		return application.ErrNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdateSpecialistStatus(ctx context.Context, userID string, status domain.SpecialistStatus) error {
+	command, err := s.pool.Exec(ctx, `UPDATE users SET specialist_status=$2,updated_at=NOW() WHERE id=$1`, userID, status)
+	if err != nil {
+		return err
+	}
+	if command.RowsAffected() == 0 {
+		return application.ErrNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) CreateRefreshToken(ctx context.Context, token domain.RefreshToken) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO refresh_tokens (id,user_id,token_hash,expires_at,created_at) VALUES ($1,$2,$3,$4,$5)`, token.ID, token.UserID, token.TokenHash, token.ExpiresAt, token.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetRefreshToken(ctx context.Context, tokenHash string) (domain.RefreshToken, error) {
+	var t domain.RefreshToken
+	err := s.pool.QueryRow(ctx, `SELECT id,user_id,token_hash,expires_at,revoked_at,created_at FROM refresh_tokens WHERE token_hash=$1`, tokenHash).
+		Scan(&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.RevokedAt, &t.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return t, application.ErrNotFound
+	}
+	return t, err
+}
+
+func (s *PostgresStore) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=NOW() WHERE token_hash=$1 AND revoked_at IS NULL`, tokenHash)
+	return err
+}
+
+func (s *PostgresStore) RevokeUserRefreshTokens(ctx context.Context, userID string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL`, userID)
+	return err
+}
+
+func scanUser(row pgx.Row) (domain.User, error) {
+	var u domain.User
+	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName, &u.Role, &u.Line, &u.SpecialistStatus, &u.CreatedAt, &u.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return u, application.ErrNotFound
+	}
+	return u, err
 }
 
 func requestStatus(result port.ProcessResponse) (domain.RequestStatus, string) {
