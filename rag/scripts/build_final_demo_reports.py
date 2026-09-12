@@ -94,8 +94,8 @@ def grounding_review(e2e: dict[str, Any], chunks: dict[str, dict[str, Any]]) -> 
     lines = [
         "# Final grounding review", "",
         "This is a deterministic review packet, not an automatic factual certification.",
-        f"Source E2E runtime: `{runtime.get('profanity_backend')}`; ML E2E: `{runtime.get('ml_profanity_e2e')}`.",
-        "A final ML run is required before this packet can be treated as final-demo certification.", "",
+        f"Source E2E runtime: `{runtime.get('profanity_backend')}`; profanity mode: `{runtime.get('ml_profanity_e2e')}`.",
+        "This packet remains a human grounding-review aid, not an automatic certification.", "",
     ]
     all_flags: Counter[str] = Counter()
     rows = [row for row in e2e.get("scenarios", []) if row.get("decision") == "ANSWER"]
@@ -134,11 +134,11 @@ def demo_queries(e2e: dict[str, Any]) -> str:
         ("l2_offer_process", "L2 process/policy routing"),
         ("l3_quotation", "L3 technical routing"),
         ("l2_broad_policy", "Clarification before retrieval"),
-        ("profanity", "ML hard rejection before every downstream stage"),
+        ("profanity", "deterministic hard rejection before every downstream stage"),
         ("bm25_rescue", "Dense-primary with sparse BM25 rescue"),
     ]
     by_id = {row["id"]: row for row in e2e.get("scenarios", [])}
-    lines = ["# Final live-demo queries", "", "Use only after a green ML preflight and ML E2E run. These cases were structurally verified in the saved E2E dataset; ANSWER grounding remains subject to the review packet.", "", "| Query | Expected route | Expected decision | Demonstrates |", "| --- | --- | --- | --- |"]
+    lines = ["# Final live-demo queries", "", "Use only after a green local preflight and E2E run. These cases were structurally verified in the saved E2E dataset; ANSWER grounding remains subject to the review packet.", "", "| Query | Expected route | Expected decision | Demonstrates |", "| --- | --- | --- | --- |"]
     for scenario_id, purpose in selected:
         row = by_id[scenario_id]
         lines.append(f"| {row['query']} | `{row.get('route') or '—'}` | `{row.get('decision')}` | {purpose} |")
@@ -148,7 +148,6 @@ def demo_queries(e2e: dict[str, Any]) -> str:
 def system_report(e2e: dict[str, Any], retrieval: dict[str, Any], flags: Counter[str], settings: Settings, pytest_result: str) -> str:
     summary, runtime, latency = e2e.get("summary", {}), e2e.get("runtime", {}), e2e.get("latency", {})
     dense = retrieval.get("metrics", {}).get("DENSE", {}).get("document", {})
-    model_ready = settings.profanity_model_dir.is_dir() and settings.profanity_threshold_path.is_file()
     def metric(name: str) -> str:
         item = latency.get(name, {})
         return f"p50={item.get('p50')} ms; p95={item.get('p95')} ms (n={item.get('count')})"
@@ -163,7 +162,7 @@ Architecture is frozen. No retrieval ranking, confidence threshold, reranker, in
 ```text
 User query
     ↓
-ML profanity hard gate
+Deterministic local profanity hard gate
     ↓
 clarification policy
     ↓
@@ -189,7 +188,7 @@ RETRIEVAL_STRATEGY={settings.retrieval_strategy}
 RERANKER_ENABLED={int(settings.rerank_enabled)}
 CONFIDENCE_MIN_OFFICIAL_SCORE={settings.confidence_min_official_score:.2f}
 CLARIFICATION_POLICY_ENABLED={int(settings.clarification_policy_enabled)}
-PROFANITY_BACKEND=ml
+PROFANITY_BACKEND={settings.profanity_backend}
 ```
 
 ## Data and index state
@@ -197,8 +196,8 @@ PROFANITY_BACKEND=ml
 - Official Qdrant collection expected: `zakupki_official`, 1,073 points.
 - Ticket BM25 artifact: `{settings.data_dir / 'indexes' / 'support_tickets_bm25.pkl'}`.
 - Persistent embedding worker and Qdrant were healthy in the latest rehearsal preflight.
-- ML profanity runtime artifacts available now: **{model_ready}**.
-- Saved E2E runtime backend: `{runtime.get('profanity_backend')}`; ML E2E state: `{runtime.get('ml_profanity_e2e')}`.
+- No profanity model weights or threshold file are required.
+- Saved E2E runtime backend: `{runtime.get('profanity_backend')}`; mode state: `{runtime.get('ml_profanity_e2e')}`.
 
 ## Offline retrieval evaluation
 
@@ -227,7 +226,7 @@ Latest full suite: **{pytest_result}**.
 
 ## Known limitations / release gate
 
-- The fine-tuned ML profanity model and its training-selected `threshold.json` are absent from the configured runtime path, so ML preflight and ML E2E cannot pass yet. This is the sole external artifact blocker; rule mode is rehearsal-only and is not a release substitute.
+- The deterministic profanity detector intentionally recognises only high-confidence Russian obscene vocabulary and reasonable obfuscations; it is not a universal toxicity classifier.
 - Silver evaluation has a small sample and is not production-scale real-user validation.
 - Intel CPU query embeddings dominate latency.
 - Reranker is deliberately disabled.

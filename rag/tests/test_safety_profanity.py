@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from src.application.pipeline import QueryPreprocessor, RAGService
 from src.core.config import Settings
-from src.safety.profanity import MLProfanityDetector, ProfanityResult
+from src.safety.profanity import ProfanityResult, RuleProfanityDetector
 
 
 class FakeDetector:
-    backend = "ml"
+    backend = "rule"
 
     def __init__(self, detected: bool, probability: float = .1, threshold: float = .5):
         self.result = ProfanityResult(detected, probability, threshold)
@@ -56,16 +54,16 @@ class SpyGenerator:
         return {"answer": evidence[0]["text"], "used_evidence": True}
 
 
-def test_clean_ml_result_continues_to_normal_pipeline():
+def test_clean_rule_result_continues_to_normal_pipeline():
     detector, context, router, retriever, generator = FakeDetector(False), SpyContext(), SpyRouter(), SpyRetriever(), SpyGenerator()
     result = RAGService(retriever, preprocessor=QueryPreprocessor(detector), context=context, router=router, generator=generator).ask("clean query")
     assert result["status"] == "ANSWER"
     assert detector.calls == context.calls == router.calls == retriever.calls == generator.calls == 1
-    assert result["diagnostics"]["profanity_backend"] == "ml"
+    assert result["diagnostics"]["profanity_backend"] == "rule"
     assert result["diagnostics"]["profanity_detected"] is False
 
 
-def test_profane_ml_result_stops_before_every_other_component():
+def test_profane_rule_result_stops_before_every_other_component():
     detector, context, router, retriever, generator = FakeDetector(True, .91, .5), SpyContext(), SpyRouter(), SpyRetriever(), SpyGenerator()
     result = RAGService(retriever, preprocessor=QueryPreprocessor(detector), context=context, router=router, generator=generator).ask("profane query")
     assert result["status"] == "REFUSE_PROFANITY"
@@ -77,29 +75,14 @@ def test_profane_ml_result_stops_before_every_other_component():
     assert result["diagnostics"]["profanity_threshold"] == .5
 
 
-def test_ml_detector_loads_once_reuses_model_and_honors_threshold(tmp_path, monkeypatch):
-    from src.safety import profanity
-
-    model_dir = tmp_path / "best_model"
-    model_dir.mkdir()
-    threshold_path = tmp_path / "threshold.json"
-    threshold_path.write_text('{"threshold": 0.6}', encoding="utf-8")
-    loads = {"count": 0}
-
-    def fake_load(_path, device):
-        loads["count"] += 1
-        return object(), object()
-
-    def fake_predict(texts, _tokenizer, _model, **kwargs):
-        assert texts
-        assert kwargs["batch_size"] == 8
-        return [.6]
-
-    monkeypatch.setattr(profanity, "_inference_utilities", lambda _src: (lambda: SimpleNamespace(type="cpu"), fake_load, fake_predict))
-    detector = MLProfanityDetector(model_dir, threshold_path, classifier_src=tmp_path)
-    assert detector.detect("first").detected is True
-    assert detector.detect("second").detected is True
-    assert loads["count"] == 1
+def test_rule_detector_requires_no_model_or_threshold_files(tmp_path):
+    detector = RuleProfanityDetector()
+    result = detector.detect("\u044d\u0442\u043e \u0445\u0443\u0439\u043d\u044f")
+    assert result.detected is True
+    assert result.probability == 1.0
+    assert result.threshold == 1.0
+    assert result.match_type in {"exact", "root"}
+    assert not list(tmp_path.iterdir())
 
 
 def test_factory_constructs_one_configured_detector_for_the_service(tmp_path, monkeypatch):
@@ -108,8 +91,8 @@ def test_factory_constructs_one_configured_detector_for_the_service(tmp_path, mo
     detector = FakeDetector(False)
     created = []
 
-    def build(backend, model_dir, threshold_path):
-        created.append((backend, model_dir, threshold_path))
+    def build(backend):
+        created.append(backend)
         return detector
 
     monkeypatch.setattr(factory, "build_profanity_detector", build)

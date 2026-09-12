@@ -1,0 +1,156 @@
+{"id": "direct_001", "category": "direct", "text": "хуй", "expected_profane": true}
+{"id": "direct_002", "category": "direct", "text": "хуйня", "expected_profane": true}
+{"id": "direct_003", "category": "direct", "text": "какого хуя", "expected_profane": true}
+{"id": "direct_004", "category": "direct", "text": "пиздец", "expected_profane": true}
+{"id": "direct_005", "category": "direct", "text": "блять", "expected_profane": true}
+{"id": "direct_006", "category": "direct", "text": "ебать", "expected_profane": true}
+{"id": "direct_007", "category": "direct", "text": "сука", "expected_profane": true}
+{"id": "direct_008", "category": "direct", "text": "мудак", "expected_profane": true}
+{"id": "direct_009", "category": "direct", "text": "мудила", "expected_profane": true}
+{"id": "direct_010", "category": "direct", "text": "заебал", "expected_profane": true}
+{"id": "direct_011", "category": "direct", "text": "ХУЙ", "expected_profane": true}
+{"id": "direct_012", "category": "direct", "text": "ХУЙНЯ", "expected_profane": true}
+{"id": "direct_013", "category": "direct", "text": "КАКОГО ХУЯ", "expected_profane": true}
+{"id": "direct_014", "category": "direct", "text": "ПИЗДЕЦ", "expected_profane": true}
+{"id": "direct_015", "category": "direct", "text": "БЛЯТЬ", "expected_profane": true}
+{"id": "direct_016", "category": "direct", "text": "ЕБАТЬ", "expected_profane": true}
+{"id": "direct_017", "category": "direct", "text": "СУКА", "expected_profane": true}
+{"id": "direct_018", "category": "direct", "text": "МУДАК", "expected_profane": true}
+{"id": "direct_019", "category": "direct", "text": "МУДИЛА", "expected_profane": true}
+{"id": "direct_020", "category": "direct", "text": "ЗАЕБАЛ", "expected_profane": true}
+{"id": "direct_021", "category": "direct", "text": "Это хуй", "expected_profane": true}
+{"id": "direct_022", "category": "direct", "text": "Это хуйня", "expected_profane": true}
+{"id": "direct_023", "category": "direct", "text": "Это какого хуя", "expected_profane": true}
+{"id": "direct_024", "category": "direct", "text": "Это пиздец", "expected_profane": true}
+{"id": "direct_025", "category": "direct", "text": "Это блять", "expected_profane": true}
+{"id": "direct_026", "category": "direct", "text": "Это ебать", "expected_profane": true}
+{"id": "direct_027", "category": "direct", "text": "Это сука", "expected_profane": true}
+{"id": "direct_028", "category": "direct", "text": "Это мудак", "expected_profane": true}
+{"id": "direct_029", "category": "direct", "text": "Это мудила", "expected_profane": true}
+{"id": "direct_030", "category": "direct", "text": "Это заебал", "expected_profane": true}
+{"id": "direct_031", "category": "direct", "text": "Пользователь написал: хуй", "expected_profane": true}
+{"id": "direct_032", "category": "direct", "text": "Пользователь написал: хуйня", "expected_profane": true}
+{"id": "direct_033", "category": "direct", "text": "Пользователь написал: какого хуя", "expected_profane": true}
+{"id": "direct_034", "category": "direct", "text": "Пользователь написал: пиздец", "expected_profane": true}
+{"id": "direct_035", "category": "direct", "text": "Пользователь написал: блять", "expected_profane": true}
+{"id": "direct_036", "category": "direct", "text": "Пользователь написал: ебать", "expected_profane": true}
+{"id": "direct_037", "category": "direct", "text": "Пользователь написал: сука", "expected_profane": true}
+{"id": "direct_038", "category": "direct", "text": "Пользователь написал: мудак", "expected_profane": true}
+{"id": "direct_039", "category": "direct", "text": "Пользователь написал: мудила", "expected_profane": true}
+{"id": "direct_040", "category": "direct", "text": "Пользователь написал: заебал", "expected_profane": true}
+{"id": "direct_041", "category": "direct", "text": "Просьба: хуй", "expected_profane": true}
+{"id": "direct_042", "category": "direct", "text": "Просьба: хуйня", "expected_profane": true}
+{"id": "direct_043", "category": "direct", "text": "Просьба: какого хуя", "expected_profane": true}
+{"id": "direct_044", "category": "direct", "text": "Просьба: пиздец", "expected_profane": true}
+{"id": "direct_045", "category": "direct", "text": "Просьба: блять", "expected_profane": true}
+{"id": "direct_046", "category": "direct", "text": "Просьба: ебать", "expected_profane": true}
+{"id": "direct_047", "category": "direct", "text": "Просьба: сука", "expected_profane": true}
+{"id": "direct_048", "category": "direct", "text": "Просьба: мудак", "expected_profane": true}
+{"id": "direct_049", "category": "direct", "text": "Просьба: мудила", "expected_profane": true}
+{"id": "direct_050", "category": "direct", "text": "Просьба: заебал", "expected_profane": true}
+{"id": "direct_051", "category": "direct", "text": "Ответьте: хуй", "expected_profane": true}
+{"id": "direct_052", "category": "direct", "text": "Ответьте: хуйня", "expected_profane": true}
+{"id": "direct_053", "category": "direct", "text": "Ответьте: какого хуя", "expected_profane": true}
+{"id": "direct_054", "category": "direct", "text": "Ответьте: пиздец", "expected_profane": true}
+{"id": "direct_055", "category": "direct", "text": "Ответьте: блять", "expected_profane": true}
+{"id": "direct_056", "category": "direct", "text": "Ответьте: ебать", "expected_profane": true}
+{"id": "direct_057", "category": "direct", "text": "Ответьте: сука", "expected_profane": true}
+{"id": "direct_058", "category": "direct", "text": "Ответьте: мудак", "expected_profane": true}
+{"id": "direct_059", "category": "direct", "text": "Ответьте: мудила", "expected_profane": true}
+{"id": "direct_060", "category": "direct", "text": "Ответьте: заебал", "expected_profane": true}
+{"id": "morphology_061", "category": "morphology", "text": "хуями", "expected_profane": true}
+{"id": "morphology_062", "category": "morphology", "text": "хуевый", "expected_profane": true}
+{"id": "morphology_063", "category": "morphology", "text": "хуесос", "expected_profane": true}
+{"id": "morphology_064", "category": "morphology", "text": "пизда", "expected_profane": true}
+{"id": "morphology_065", "category": "morphology", "text": "пиздюк", "expected_profane": true}
+{"id": "morphology_066", "category": "morphology", "text": "пиздеть", "expected_profane": true}
+{"id": "morphology_067", "category": "morphology", "text": "блядь", "expected_profane": true}
+{"id": "morphology_068", "category": "morphology", "text": "бляха", "expected_profane": true}
+{"id": "morphology_069", "category": "morphology", "text": "ебаный", "expected_profane": true}
+{"id": "morphology_070", "category": "morphology", "text": "ебнулся", "expected_profane": true}
+{"id": "morphology_071", "category": "morphology", "text": "заебешь", "expected_profane": true}
+{"id": "morphology_072", "category": "morphology", "text": "сукой", "expected_profane": true}
+{"id": "capitalization_073", "category": "capitalization", "text": "ХУЙ", "expected_profane": true}
+{"id": "capitalization_074", "category": "capitalization", "text": "ПиЗдЕц", "expected_profane": true}
+{"id": "capitalization_075", "category": "capitalization", "text": "БЛЯТЬ", "expected_profane": true}
+{"id": "capitalization_076", "category": "capitalization", "text": "ЕбАть", "expected_profane": true}
+{"id": "capitalization_077", "category": "capitalization", "text": "СУКА", "expected_profane": true}
+{"id": "capitalization_078", "category": "capitalization", "text": "МуДаК", "expected_profane": true}
+{"id": "capitalization_079", "category": "capitalization", "text": "ХуЙнЯ", "expected_profane": true}
+{"id": "capitalization_080", "category": "capitalization", "text": "ЗаЕбАл", "expected_profane": true}
+{"id": "obfuscation_081", "category": "obfuscation", "text": "х*й", "expected_profane": true}
+{"id": "obfuscation_082", "category": "obfuscation", "text": "х_й", "expected_profane": true}
+{"id": "obfuscation_083", "category": "obfuscation", "text": "х-й", "expected_profane": true}
+{"id": "obfuscation_084", "category": "obfuscation", "text": "х.й", "expected_profane": true}
+{"id": "obfuscation_085", "category": "obfuscation", "text": "х у й", "expected_profane": true}
+{"id": "obfuscation_086", "category": "obfuscation", "text": "хуууй", "expected_profane": true}
+{"id": "obfuscation_087", "category": "obfuscation", "text": "п*здец", "expected_profane": true}
+{"id": "obfuscation_088", "category": "obfuscation", "text": "п и з д е ц", "expected_profane": true}
+{"id": "obfuscation_089", "category": "obfuscation", "text": "бл*ть", "expected_profane": true}
+{"id": "obfuscation_090", "category": "obfuscation", "text": "б л я т ь", "expected_profane": true}
+{"id": "obfuscation_091", "category": "obfuscation", "text": "е*ать", "expected_profane": true}
+{"id": "obfuscation_092", "category": "obfuscation", "text": "с*ка", "expected_profane": true}
+{"id": "obfuscation_093", "category": "obfuscation", "text": "му*ак", "expected_profane": true}
+{"id": "mixed_script_094", "category": "mixed_script", "text": "xуй", "expected_profane": true}
+{"id": "mixed_script_095", "category": "mixed_script", "text": "хyй", "expected_profane": true}
+{"id": "mixed_script_096", "category": "mixed_script", "text": "хуuй", "expected_profane": true}
+{"id": "mixed_script_097", "category": "mixed_script", "text": "пиздeц", "expected_profane": true}
+{"id": "mixed_script_098", "category": "mixed_script", "text": "бл*ть", "expected_profane": true}
+{"id": "mixed_script_099", "category": "mixed_script", "text": "eбать", "expected_profane": true}
+{"id": "mixed_script_100", "category": "mixed_script", "text": "cyка", "expected_profane": true}
+{"id": "mixed_script_101", "category": "mixed_script", "text": "мyдак", "expected_profane": true}
+{"id": "clean_support_102", "category": "clean_support", "text": " Как добавить МЧД?", "expected_profane": false}
+{"id": "clean_support_103", "category": "clean_support", "text": " Не получается подписать документ", "expected_profane": false}
+{"id": "clean_support_104", "category": "clean_support", "text": " Где найти закупку?", "expected_profane": false}
+{"id": "clean_support_105", "category": "clean_support", "text": " Ошибка при загрузке файла", "expected_profane": false}
+{"id": "clean_support_106", "category": "clean_support", "text": " Как изменить сертификат?", "expected_profane": false}
+{"id": "clean_support_107", "category": "clean_support", "text": " Не могу загрузить XML", "expected_profane": false}
+{"id": "clean_support_108", "category": "clean_support", "text": " Как создать оферту?", "expected_profane": false}
+{"id": "clean_support_109", "category": "clean_support", "text": " Не открывается котировочная сессия", "expected_profane": false}
+{"id": "clean_support_110", "category": "clean_support", "text": "Пожалуйста,  Как добавить МЧД?", "expected_profane": false}
+{"id": "clean_support_111", "category": "clean_support", "text": "Пожалуйста,  Не получается подписать документ", "expected_profane": false}
+{"id": "clean_support_112", "category": "clean_support", "text": "Пожалуйста,  Где найти закупку?", "expected_profane": false}
+{"id": "clean_support_113", "category": "clean_support", "text": "Пожалуйста,  Ошибка при загрузке файла", "expected_profane": false}
+{"id": "clean_support_114", "category": "clean_support", "text": "Пожалуйста,  Как изменить сертификат?", "expected_profane": false}
+{"id": "clean_support_115", "category": "clean_support", "text": "Пожалуйста,  Не могу загрузить XML", "expected_profane": false}
+{"id": "clean_support_116", "category": "clean_support", "text": "Пожалуйста,  Как создать оферту?", "expected_profane": false}
+{"id": "clean_support_117", "category": "clean_support", "text": "Пожалуйста,  Не открывается котировочная сессия", "expected_profane": false}
+{"id": "clean_support_118", "category": "clean_support", "text": "Подскажите:  Как добавить МЧД?", "expected_profane": false}
+{"id": "clean_support_119", "category": "clean_support", "text": "Подскажите:  Не получается подписать документ", "expected_profane": false}
+{"id": "clean_support_120", "category": "clean_support", "text": "Подскажите:  Где найти закупку?", "expected_profane": false}
+{"id": "clean_support_121", "category": "clean_support", "text": "Подскажите:  Ошибка при загрузке файла", "expected_profane": false}
+{"id": "clean_support_122", "category": "clean_support", "text": "Подскажите:  Как изменить сертификат?", "expected_profane": false}
+{"id": "clean_support_123", "category": "clean_support", "text": "Подскажите:  Не могу загрузить XML", "expected_profane": false}
+{"id": "clean_support_124", "category": "clean_support", "text": "Подскажите:  Как создать оферту?", "expected_profane": false}
+{"id": "clean_support_125", "category": "clean_support", "text": "Подскажите:  Не открывается котировочная сессия", "expected_profane": false}
+{"id": "clean_support_126", "category": "clean_support", "text": "Срочно:  Как добавить МЧД?", "expected_profane": false}
+{"id": "clean_support_127", "category": "clean_support", "text": "Срочно:  Не получается подписать документ", "expected_profane": false}
+{"id": "clean_support_128", "category": "clean_support", "text": "Срочно:  Где найти закупку?", "expected_profane": false}
+{"id": "clean_support_129", "category": "clean_support", "text": "Срочно:  Ошибка при загрузке файла", "expected_profane": false}
+{"id": "clean_support_130", "category": "clean_support", "text": "Срочно:  Как изменить сертификат?", "expected_profane": false}
+{"id": "clean_support_131", "category": "clean_support", "text": "Срочно:  Не могу загрузить XML", "expected_profane": false}
+{"id": "clean_support_132", "category": "clean_support", "text": "Срочно:  Как создать оферту?", "expected_profane": false}
+{"id": "clean_support_133", "category": "clean_support", "text": "Срочно:  Не открывается котировочная сессия", "expected_profane": false}
+{"id": "clean_support_134", "category": "clean_support", "text": "Добрый день.  Как добавить МЧД?", "expected_profane": false}
+{"id": "clean_support_135", "category": "clean_support", "text": "Добрый день.  Не получается подписать документ", "expected_profane": false}
+{"id": "clean_support_136", "category": "clean_support", "text": "Добрый день.  Где найти закупку?", "expected_profane": false}
+{"id": "clean_support_137", "category": "clean_support", "text": "Добрый день.  Ошибка при загрузке файла", "expected_profane": false}
+{"id": "clean_support_138", "category": "clean_support", "text": "Добрый день.  Как изменить сертификат?", "expected_profane": false}
+{"id": "clean_support_139", "category": "clean_support", "text": "Добрый день.  Не могу загрузить XML", "expected_profane": false}
+{"id": "clean_support_140", "category": "clean_support", "text": "Добрый день.  Как создать оферту?", "expected_profane": false}
+{"id": "clean_support_141", "category": "clean_support", "text": "Добрый день.  Не открывается котировочная сессия", "expected_profane": false}
+{"id": "tricky_negative_142", "category": "tricky_negative", "text": "ебатьево", "expected_profane": false}
+{"id": "tricky_negative_143", "category": "tricky_negative", "text": "суконная ткань", "expected_profane": false}
+{"id": "tricky_negative_144", "category": "tricky_negative", "text": "мудрость пользователя", "expected_profane": false}
+{"id": "tricky_negative_145", "category": "tricky_negative", "text": "пизанская башня", "expected_profane": false}
+{"id": "tricky_negative_146", "category": "tricky_negative", "text": "художественный каталог", "expected_profane": false}
+{"id": "tricky_negative_147", "category": "tricky_negative", "text": "блямба на чертеже", "expected_profane": false}
+{"id": "tricky_negative_148", "category": "tricky_negative", "text": "контракт подписан", "expected_profane": false}
+{"id": "tricky_negative_149", "category": "tricky_negative", "text": "переебывать данные не требуется", "expected_profane": false}
+{"id": "tricky_negative_150", "category": "tricky_negative", "text": "система не отвечает", "expected_profane": false}
+{"id": "tricky_negative_151", "category": "tricky_negative", "text": "хуже отображается страница", "expected_profane": false}
+{"id": "tricky_negative_152", "category": "tricky_negative", "text": "суккулент в офисе", "expected_profane": false}
+{"id": "tricky_negative_153", "category": "tricky_negative", "text": "мудрый выбор поставщика", "expected_profane": false}
+{"id": "tricky_negative_154", "category": "tricky_negative", "text": "объект успешно добавлен", "expected_profane": false}
+{"id": "tricky_negative_155", "category": "tricky_negative", "text": "пизанская пицца", "expected_profane": false}
+{"id": "tricky_negative_156", "category": "tricky_negative", "text": "хурма в столовой", "expected_profane": false}

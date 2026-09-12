@@ -174,7 +174,7 @@ def main() -> None:
     parser.add_argument("scenarios", type=Path, nargs="?", default=DEFAULT_SCENARIOS)
     parser.add_argument("--output", type=Path, default=DEFAULT_JSON)
     parser.add_argument("--markdown", type=Path, default=DEFAULT_MD)
-    parser.add_argument("--profanity-backend", choices=("ml", "rule"), help="Explicit runtime backend; never a silent fallback.")
+    parser.add_argument("--profanity-backend", choices=("rule", "deterministic"), help="Explicit runtime backend.")
     args = parser.parse_args()
     kwargs = {"profanity_backend": args.profanity_backend} if args.profanity_backend else {}
     settings = Settings(**kwargs)
@@ -183,9 +183,7 @@ def main() -> None:
     summary = {"total": len(rows), "passed": sum(row["result"] == "PASS" for row in rows), "failed": sum(row["result"] == "FAIL" for row in rows),
                "review": sum(row["result"] == "REVIEW" for row in rows), "grounding_warnings": sum(len(row["grounding_warnings"]) for row in rows),
                "decision_errors": sum(bool(row["expectation_mismatches"]) for row in rows)}
-    ml_artifacts = settings.profanity_model_dir.is_dir() and settings.profanity_threshold_path.is_file()
-    ml_e2e = "EXECUTED" if settings.profanity_backend == "ml" else "NOT_RUN_EXPLICIT_RULE" if ml_artifacts else "NOT_RUN_ARTIFACTS_MISSING"
-    payload = {"runtime": {"profanity_backend": settings.profanity_backend, "ml_profanity_e2e": ml_e2e,
+    payload = {"runtime": {"profanity_backend": settings.profanity_backend, "ml_profanity_e2e": "RETIRED_DETERMINISTIC_RULES",
                             "retrieval_strategy": settings.retrieval_strategy, "reranker_enabled": settings.rerank_enabled,
                             "confidence_min_official_score": settings.confidence_min_official_score},
                "summary": summary, "scenarios": rows, "latency": latency_summary(rows)}

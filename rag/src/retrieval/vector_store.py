@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 import json
+import socket
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -101,11 +102,21 @@ class HttpQdrantStore:
 
     def __init__(self, host: str = "localhost", port: int = 6333, collection: str = "tender_documents", timeout: float = 10.0):
         self.collection = collection
+        self.host = host
+        # On the Windows demo host, calling getaddrinfo after a local Torch
+        # model has loaded can terminate the interpreter.  Local Qdrant is
+        # always loopback, so use a numeric endpoint and a direct socket for
+        # this path.  Remote/non-local hosts retain the existing urllib path.
+        self.connect_host = "127.0.0.1" if host.strip().lower() in {"localhost", "127.0.0.1"} else host
+        self._use_local_socket = self.connect_host == "127.0.0.1"
         self.base_url = f"http://{host}:{port}"
+        self.port = port
         self.timeout = timeout
 
     def _request(self, method: str, path: str, body: dict | None = None) -> dict:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        if self._use_local_socket:
+            return self._local_request(method, path, data)
         request = Request(
             f"{self.base_url}{path}", data=data, method=method,
             headers={"Content-Type": "application/json"} if data is not None else {},
@@ -115,6 +126,41 @@ class HttpQdrantStore:
                 return json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, TimeoutError) as error:
             raise ConnectionError(f"Qdrant REST {method} {path} failed: {error}") from error
+
+    def _local_request(self, method: str, path: str, data: bytes | None) -> dict:
+        """Send local Qdrant REST without DNS resolution after Torch startup."""
+        headers = [
+            f"{method} {path} HTTP/1.1",
+            f"Host: {self.connect_host}:{self.port}",
+            "Connection: close",
+        ]
+        if data is not None:
+            headers.extend(("Content-Type: application/json", f"Content-Length: {len(data)}"))
+        request = "\r\n".join(headers).encode("ascii") + b"\r\n\r\n" + (data or b"")
+        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            connection.settimeout(self.timeout)
+            connection.connect((self.connect_host, self.port))
+            connection.sendall(request)
+            received = bytearray()
+            while True:
+                block = connection.recv(65_536)
+                if not block:
+                    break
+                received.extend(block)
+        except OSError as error:
+            raise ConnectionError(f"Qdrant REST {method} {path} failed: {error}") from error
+        finally:
+            connection.close()
+        try:
+            headers_raw, payload = bytes(received).split(b"\r\n\r\n", 1)
+            status_line = headers_raw.split(b"\r\n", 1)[0]
+            status = int(status_line.split()[1])
+            if not 200 <= status < 300:
+                raise ConnectionError(f"Qdrant REST {method} {path} returned HTTP {status}")
+            return json.loads(payload.decode("utf-8"))
+        except (IndexError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+            raise ConnectionError(f"Invalid local Qdrant REST response for {method} {path}: {error}") from error
 
     def collection_exists(self, collection: str | None = None) -> bool:
         name = collection or self.collection

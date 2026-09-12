@@ -133,3 +133,16 @@ def test_confidence_uses_raw_dense_score_when_fused_score_is_absent():
     evaluator = ConfidenceEvaluator()
     features = evaluator.features([{**_source(), "score": None, "rrf_score": None, "raw_score": .73}], {})
     assert features["top_score"] == .73
+
+
+def test_confidence_never_compares_a_bm25_raw_score_to_dense_threshold():
+    evaluator = ConfidenceEvaluator(min_official_score=.60)
+    bm25 = {**_source(), "score": None, "rrf_score": None, "raw_score": 8.36, "retrieval_method": "bm25"}
+    dense = {**_source(), "chunk_id": "dense", "document_id": "dense", "score": None, "rrf_score": None, "raw_score": .556, "retrieval_method": "dense"}
+    features = evaluator.features([bm25, dense], {"official_bm25": [bm25], "official_dense": [dense]})
+
+    assert features["top_score"] == 8.36
+    assert features["official_confidence_score"] == .556
+    assert evaluator.decide("L1", [bm25, dense], features) == (
+        "ESCALATE_TO_OPERATOR", "official_dense_score_below_threshold",
+    )

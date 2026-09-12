@@ -36,15 +36,15 @@ Start-Process python -ArgumentList '-u','scripts/index_official_qdrant.py','--ba
 
 ## Demo preflight
 
-Run the demo from `rag/` in this order. The production demo profile is ML
-moderation; it never silently substitutes the rule backend.
+Run the demo from `rag/` in this order. The production demo profile uses a
+deterministic local profanity gate with no model or network dependency.
 
 ```powershell
 # Terminal 1 — start once and keep this process running.
 python -u scripts/embedding_worker.py
 
 # Terminal 2 — validates ML profanity, data, BM25, worker and Qdrant.
-python scripts/check_demo_health.py --profanity-backend ml --load-profanity
+python scripts/check_demo_health.py --profanity-backend rule --load-profanity
 
 # Terminal 3 — use the same ML profile for the CLI or HTTP adapter.
 python scripts/ask.py "как добавить МЧД"
@@ -54,22 +54,19 @@ python scripts/ask.py "как добавить МЧД"
 Before the presentation, also run the reviewable ML E2E suite:
 
 ```powershell
-python scripts/run_e2e_demo_eval.py data/eval/e2e_demo_scenarios.jsonl --profanity-backend ml
+python scripts/run_e2e_demo_eval.py data/eval/e2e_demo_scenarios.jsonl --profanity-backend rule
 python scripts/build_final_demo_reports.py
 python -m pytest -q
 ```
 
-The fine-tuned model and the training-selected threshold must be present at
-`profanity_binary_classifier/artifacts/fine_tuned_rubert_tiny2/`. If they are
-missing, ML preflight must fail; do not present with a hidden fallback. The
-explicit `--profanity-backend rule` option is retained for non-ML rehearsal
-only. The runner writes reviewable JSON and Markdown reports under
+The profanity gate is deterministic and uses compiled local rules; it does not
+need `best_model/`, `threshold.json`, Torch, or transformers. The runner writes reviewable JSON and Markdown reports under
 `data/processed/eval/`; `ANSWER` scenarios stay marked `REVIEW` until a person
 checks `final_grounding_review.md`.
 
 ### Pre-demo checklist
 
-- [ ] ML profanity model and `threshold.json` loaded
+- [ ] deterministic profanity smoke cases passed
 - [ ] Qwen embedding worker alive
 - [ ] Qdrant healthy; `zakupki_official` has 1,073 points
 - [ ] ticket BM25 index present

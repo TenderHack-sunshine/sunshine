@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+import threading
 from time import perf_counter
 
 
@@ -18,18 +18,36 @@ class OfficialDenseRetriever:
         self.store = store
         self.query_timeout_seconds = query_timeout_seconds
         self.last_timing = {"query_embedding_ms": 0.0, "dense_search_ms": 0.0}
+        self._embedding_in_flight = threading.Lock()
 
     def _with_timeout(self, callable_):
         if self.query_timeout_seconds is None:
             return callable_()
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(callable_)
-        try:
-            return future.result(timeout=self.query_timeout_seconds)
-        except FutureTimeout as error:
-            raise DenseUnavailable(f"query embedding timed out after {self.query_timeout_seconds}s") from error
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+        # A timed-out ThreadPoolExecutor worker is non-cancellable. The former
+        # implementation created one for every query, which accumulated live
+        # threads on Windows and prevented offline evaluation from exiting. One
+        # daemon request at a time contains the failure; the socket client still
+        # owns its normal read timeout and releases the lock when it returns.
+        if not self._embedding_in_flight.acquire(blocking=False):
+            raise DenseUnavailable("previous query embedding is still in progress")
+        outcome: dict[str, object] = {}
+
+        def run() -> None:
+            try:
+                outcome["value"] = callable_()
+            except BaseException as error:  # propagated on the caller thread.
+                outcome["error"] = error
+            finally:
+                self._embedding_in_flight.release()
+
+        thread = threading.Thread(target=run, name="qwen-query-embedding", daemon=True)
+        thread.start()
+        thread.join(self.query_timeout_seconds)
+        if thread.is_alive():
+            raise DenseUnavailable(f"query embedding timed out after {self.query_timeout_seconds}s")
+        if "error" in outcome:
+            raise outcome["error"]  # type: ignore[misc]
+        return outcome["value"]
 
     def retrieve(self, query: str, top_k: int = 15, filters: dict[str, str | list[str]] | None = None,
                  max_per_document: int | None = 2) -> list[dict]:

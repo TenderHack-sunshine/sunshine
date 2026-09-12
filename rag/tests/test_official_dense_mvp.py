@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 
 from scripts.index_official_qdrant import OFFICIAL_SOURCE_TYPES, index_resumable, select_official_chunks
 from src.retrieval.mvp import TwoPathRetriever
@@ -176,6 +178,35 @@ def test_official_dense_rejects_ticket_payload_even_if_store_is_misconfigured():
 
     result = OfficialDenseRetriever(Embedder(), Store()).retrieve("query")
     assert result == []
+
+
+def test_dense_timeout_does_not_accumulate_non_daemon_executor_threads():
+    release = threading.Event()
+
+    class SlowEmbedder:
+        @staticmethod
+        def embed_query(_query):
+            release.wait(1)
+            return [1.0, 0.0]
+
+    class Store:
+        @staticmethod
+        def search(*_args, **_kwargs):
+            return []
+
+    retriever = OfficialDenseRetriever(SlowEmbedder(), Store(), query_timeout_seconds=.01)
+    try:
+        try:
+            retriever.retrieve("first")
+        except DenseUnavailable as error:
+            assert "timed out" in str(error)
+        try:
+            retriever.retrieve("second")
+        except DenseUnavailable as error:
+            assert "in progress" in str(error)
+    finally:
+        release.set()
+        time.sleep(.01)
 
 
 def test_rest_qdrant_payload_mapping_uses_stable_payload_and_filters(monkeypatch):

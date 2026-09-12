@@ -1,5 +1,4 @@
 from .profanity import (
-    MLProfanityDetector,
     ProfanityModelLoadError,
     ProfanityResult,
     RuleProfanityDetector,
@@ -7,7 +6,6 @@ from .profanity import (
 )
 
 __all__ = [
-    "MLProfanityDetector",
     "ProfanityModelLoadError",
     "ProfanityResult",
     "RuleProfanityDetector",

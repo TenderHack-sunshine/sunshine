@@ -6,6 +6,8 @@ from time import perf_counter
 from src.generation.generator import EvidenceGenerator
 from src.application.clarification import ClarificationPolicy, ConfidenceSignals
 from src.application.evidence import compact_evidence, tagged_context
+from src.application.evidence_sufficiency import EvidenceSufficiencyChecker
+from src.application.knowledge_gap import knowledge_gap
 from src.routing.normalization import normalize_query
 from src.routing.technical import TechnicalRouter
 from src.safety.profanity import ProfanityDetector, RuleProfanityDetector
@@ -78,11 +80,24 @@ class ConfidenceEvaluator:
         official = [item for item in candidates if item.get("authority") == "official"]
         tickets = [item for item in candidates if item.get("source_type") == "support_ticket"]
         bm25_ids = {item.get("chunk_id") for item in trace.get("official_bm25", [])}
-        dense_ids = {item.get("chunk_id") for item in trace.get("official_dense", [])}
+        # ``official_dense`` is the bounded authoritative collection: official
+        # KB/manual chunks plus the curated support taxonomy.  Its cosine scores
+        # share one scale even though taxonomy has authority="taxonomy" rather
+        # than authority="official".
+        dense_candidates = list(trace.get("official_dense", []))
+        dense_ids = {item.get("chunk_id") for item in dense_candidates}
         overlap = len(bm25_ids & dense_ids)
         agreement = overlap / max(min(len(bm25_ids), len(dense_ids)), 1) if dense_ids else 0.0
+        dense_scores = [float(item.get("raw_score", item.get("score", 0.0)) or 0.0) for item in dense_candidates]
+        # CONFIDENCE_MIN_OFFICIAL_SCORE is calibrated on Qwen cosine scores.  A
+        # compacted candidate may be a BM25 rescue item, whose raw score is on a
+        # different scale and must never be compared to that threshold.
+        official_confidence_score = dense_scores[0] if dense_scores else None
         return {
             "top_score": scores[0] if scores else 0.0,
+            "official_confidence_score": official_confidence_score,
+            "official_confidence_score_method": "dense_cosine" if dense_scores else None,
+            "dense_top1_top2_gap": dense_scores[0] - dense_scores[1] if len(dense_scores) > 1 else (dense_scores[0] if dense_scores else None),
             "top_reranker_score": next((float(item["reranker_score"]) for item in candidates if "reranker_score" in item), None),
             "num_relevant_candidates": len(candidates), "num_official_candidates": len(official), "num_ticket_candidates": len(tickets),
             "official_evidence_present": bool(official), "top1_top2_gap": scores[0] - scores[1] if len(scores) > 1 else scores[0] if scores else 0.0,
@@ -95,8 +110,9 @@ class ConfidenceEvaluator:
             return "ESCALATE_TO_OPERATOR", "no_relevant_evidence"
         official = features["official_evidence_present"]
         ticket = features["num_ticket_candidates"] > 0
-        if official and features["top_score"] < self.min_official_score:
-            return "ESCALATE_TO_OPERATOR", "official_score_below_threshold"
+        confidence_score = features.get("official_confidence_score")
+        if official and confidence_score is not None and confidence_score < self.min_official_score:
+            return "ESCALATE_TO_OPERATOR", "official_dense_score_below_threshold"
         if official and self.min_agreement > 0 and features["retrieval_agreement"] < self.min_agreement:
             return "NEEDS_CLARIFICATION", "official_retrieval_agreement_below_threshold"
         if features["retrieval_agreement"] < self.min_agreement and not official:
@@ -112,7 +128,8 @@ class RAGService:
     def __init__(self, retriever, *, preprocessor: QueryPreprocessor | None = None, router: SupportRouter | None = None,
                  context: ContextAnalyzer | None = None, reranker=None, rerank_enabled: bool = False,
                  generator=None, confidence: ConfidenceEvaluator | None = None, final_top_k: int = 5, rerank_top_n: int = 20,
-                 evidence_max_per_document: int = 2, clarification_policy: ClarificationPolicy | None = None):
+                 evidence_max_per_document: int = 2, clarification_policy: ClarificationPolicy | None = None,
+                 evidence_sufficiency: EvidenceSufficiencyChecker | None = None):
         self.retriever = retriever
         self.preprocessor = preprocessor or QueryPreprocessor()
         self.router = router or SupportRouter()
@@ -122,6 +139,7 @@ class RAGService:
         self.generator = generator or EvidenceGenerator()
         self.confidence = confidence or ConfidenceEvaluator()
         self.clarification_policy = clarification_policy or ClarificationPolicy()
+        self.evidence_sufficiency = evidence_sufficiency or EvidenceSufficiencyChecker()
         self.final_top_k = final_top_k
         self.rerank_top_n = rerank_top_n
         self.evidence_max_per_document = evidence_max_per_document
@@ -170,12 +188,17 @@ class RAGService:
         candidates = compact_evidence(candidates, max_per_document=self.evidence_max_per_document)
         features = self.confidence.features(candidates, trace)
         status, reason = self.confidence.decide(route["route"], candidates, features)
+        sufficiency = self.evidence_sufficiency.evaluate(normalized, candidates)
+        if status == "ANSWER" and not sufficiency.sufficient:
+            status, reason = "ESCALATE_TO_OPERATOR", f"evidence_insufficient:{sufficiency.reason}"
         generation_started = perf_counter()
         generated = self.generator.answer(candidates) if status == "ANSWER" else {"answer": OPERATOR_MESSAGE, "used_evidence": False}
         sources = [{key: item.get(key) for key in ("chunk_id", "document_id", "source_type", "authority", "source_path", "title", "section", "page_start", "page_end", "retrieval_method", "raw_score", "rrf_score", "metadata")} for item in candidates]
         timings = dict(trace.get("timing", {}))
         timings["generation_ms"] = (perf_counter() - generation_started) * 1000
         timings["total"] = (perf_counter() - started) * 1000
+        gap = knowledge_gap(query=query, normalized_query=normalized, status=status, reason=reason,
+                            trace=trace, features=features, candidates=candidates)
         return {**base, "status": status, "route": route["route"], "answer": generated["answer"], "sources": sources,
                 "diagnostics": {"profanity_backend": prepared["moderation"]["backend"], "profanity_detected": False, "profanity_probability": prepared["moderation"]["probability"], "profanity_threshold": prepared["moderation"]["threshold"], "profanity_latency_ms": prepared["moderation"]["latency_ms"], "dense_available": trace.get("dense_available", False), "fallback_used": trace.get("fallback_used", False),
                                 "retrieval_mode": trace.get("retrieval_mode", "BM25_ONLY"), "dense_candidates": trace.get("dense_candidates", 0),
@@ -189,5 +212,9 @@ class RAGService:
                                 "retrieved_count": len(candidates), "reranker_enabled": self.rerank_enabled, "reranker_available": reranker_available,
                                 "reranker_used": reranker_used, "reranker_latency_ms": float(getattr(self.reranker, "last_latency_ms", 0.0)),
                                 "reranker_candidates": min(len(trace["results"]), self.rerank_top_n) if self.rerank_enabled else 0,
-                                "confidence": features, "confidence_reason": reason, "context": tagged_context(candidates),
+                                "confidence": features, "confidence_reason": reason, "knowledge_gap": gap,
+                                "evidence_sufficiency": {"enabled": self.evidence_sufficiency.enabled, "sufficient": sufficiency.sufficient,
+                                                         "reason": sufficiency.reason, "required_terms": list(sufficiency.required_terms),
+                                                         "missing_terms": list(sufficiency.missing_terms)},
+                                "context": tagged_context(candidates),
                                 "timings_ms": timings}}

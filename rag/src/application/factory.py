@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.application.clarification import ClarificationPolicy
+from src.application.evidence_sufficiency import EvidenceSufficiencyChecker
 from src.application.pipeline import ConfidenceEvaluator, QueryPreprocessor, RAGService
 from src.core.config import Settings
 from src.retrieval.embeddings.persistent_worker import PersistentQwenEmbeddingClient
@@ -31,9 +32,7 @@ def official_dense_if_ready(settings: Settings):
 def build_rag_service(settings: Settings | None = None, *, canonical_path: str | Path | None = None,
                       ticket_index_path: str | Path | None = None, official_dense=None, reranker=None) -> RAGService:
     settings = settings or Settings()
-    profanity_detector = build_profanity_detector(
-        settings.profanity_backend, settings.profanity_model_dir, settings.profanity_threshold_path,
-    )
+    profanity_detector = build_profanity_detector(settings.profanity_backend)
     canonical_path = Path(canonical_path or settings.processed_dir / "index" / "all_chunks.jsonl")
     ticket_index_path = Path(ticket_index_path or settings.data_dir / "indexes" / "support_tickets_bm25.pkl")
     dense = official_dense if official_dense is not None else official_dense_if_ready(settings)
@@ -55,4 +54,5 @@ def build_rag_service(settings: Settings | None = None, *, canonical_path: str |
                       reranker=reranker, rerank_enabled=settings.rerank_enabled,
                       confidence=ConfidenceEvaluator(settings.confidence_min_sources, settings.confidence_min_official_score,
                                                      settings.confidence_min_agreement), final_top_k=settings.final_top_k,
-                      rerank_top_n=settings.hybrid_rerank_top_n, evidence_max_per_document=settings.evidence_max_per_document)
+                      rerank_top_n=settings.hybrid_rerank_top_n, evidence_max_per_document=settings.evidence_max_per_document,
+                      evidence_sufficiency=EvidenceSufficiencyChecker(enabled=settings.evidence_sufficiency_enabled))

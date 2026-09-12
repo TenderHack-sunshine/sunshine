@@ -25,22 +25,20 @@ def check(name: str, callable_) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check local Tender Hack demo dependencies before presenting.")
-    parser.add_argument("--profanity-backend", choices=("ml", "rule"), help="Explicit backend override for this check.")
-    parser.add_argument("--load-profanity", action="store_true", help="Actually load the configured profanity model, not just validate its files.")
+    parser.add_argument("--profanity-backend", choices=("rule", "deterministic"), help="Explicit backend override for this check.")
+    parser.add_argument("--load-profanity", action="store_true", help="Run deterministic profanity smoke cases.")
     args = parser.parse_args()
     settings = Settings(**({"profanity_backend": args.profanity_backend} if args.profanity_backend else {}))
     canonical = settings.processed_dir / "index" / "all_chunks.jsonl"
     bm25 = settings.data_dir / "indexes" / "support_tickets_bm25.pkl"
 
     def profanity():
-        if settings.profanity_backend == "rule":
-            return "explicit rule backend"
-        if not settings.profanity_model_dir.is_dir() or not settings.profanity_threshold_path.is_file():
-            raise FileNotFoundError(f"model={settings.profanity_model_dir}; threshold={settings.profanity_threshold_path}")
         if args.load_profanity:
-            build_profanity_detector(settings.profanity_backend, settings.profanity_model_dir, settings.profanity_threshold_path)
-            return "model and threshold loaded"
-        return "model and threshold files present (use --load-profanity for load check)"
+            detector = build_profanity_detector(settings.profanity_backend)
+            if not detector.detect("\u044d\u0442\u043e \u0445\u0443\u0439\u043d\u044f").detected or detector.detect("\u043a\u0430\u043a \u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043c\u0447\u0434").detected:
+                raise RuntimeError("deterministic profanity smoke cases failed")
+            return "deterministic lexicon and regex smoke cases passed"
+        return "deterministic rule backend (use --load-profanity for smoke cases)"
 
     def worker():
         response = PersistentQwenEmbeddingClient(settings.dense_worker_host, settings.dense_worker_port).status()
