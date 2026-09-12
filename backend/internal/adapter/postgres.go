@@ -45,6 +45,44 @@ func (s *PostgresStore) AddMessage(ctx context.Context, message domain.Message) 
 	return err
 }
 
+func (s *PostgresStore) ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			id,
+			user_id,
+			original_message,
+			status,
+			topic,
+			support_level,
+			ai_status,
+			ai_answer,
+			confidence,
+			ai_sources,
+			created_at,
+			updated_at
+		FROM support_requests
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := make([]domain.SupportRequest, 0)
+
+	for rows.Next() {
+		request, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		items = append(items, request)
+	}
+
+	return items, rows.Err()
+}
+
 func (s *PostgresStore) ListMessages(ctx context.Context, requestID string) ([]domain.Message, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id,support_request_id,sender_type,text,created_at FROM messages WHERE support_request_id=$1 ORDER BY created_at,id`, requestID)
 	if err != nil {
@@ -180,6 +218,29 @@ func (s *PostgresStore) CreateFeedback(ctx context.Context, feedback domain.Feed
 		return application.ErrDuplicateFeedback
 	}
 	return err
+}
+
+func (s *PostgresStore) OperationalAnalytics(ctx context.Context) (port.OperationalAnalyticsSnapshot, error) {
+	var result port.OperationalAnalyticsSnapshot
+
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'answered'),
+			COUNT(*) FILTER (WHERE status = 'escalated'),
+			COUNT(*) FILTER (WHERE status = 'need_clarification'),
+			COUNT(*) FILTER (WHERE status = 'processing')
+		FROM support_requests
+		WHERE created_at::date = CURRENT_DATE
+	`).Scan(
+		&result.Total,
+		&result.AnsweredByAI,
+		&result.Escalated,
+		&result.NeedClarification,
+		&result.InProgress,
+	)
+
+	return result, err
 }
 
 func (s *PostgresStore) Analytics(ctx context.Context) (port.AnalyticsSnapshot, error) {

@@ -143,6 +143,11 @@ func (s *fakeStore) GetSupportRequest(_ context.Context, id string) (domain.Supp
 	}
 	return r, nil
 }
+
+func (s *fakeStore) ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error) {
+	return nil, nil
+}
+
 func (s *fakeStore) AddMessage(_ context.Context, m domain.Message) error {
 	s.messages[m.RequestID] = append(s.messages[m.RequestID], m)
 	return nil
@@ -290,6 +295,9 @@ func (s *fakeStore) Analytics(_ context.Context) (port.AnalyticsSnapshot, error)
 	}
 	_ = total
 	return result, nil
+}
+func (s *fakeStore) OperationalAnalytics(ctx context.Context) (port.OperationalAnalyticsSnapshot, error) {
+	return port.OperationalAnalyticsSnapshot{}, nil
 }
 
 var _ port.Store = (*fakeStore)(nil)
