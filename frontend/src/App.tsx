@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import AdminPanel from "./AdminPanel";
 import portalLogo from "@/imports/image-1.png";
-import { useAuth } from "./auth/AuthContext";
-import AuthPage from "./auth/AuthPage";
 import { apiPost } from "./api/client";
 import type { ApiSource, SupportResponse } from "./api";
 
@@ -190,7 +188,6 @@ function toSources(sources: ApiSource[] = []): Source[] {
 }
 
 export default function App() {
-  const auth = useAuth();
   const [page, setPage] = useState<"support" | "admin">("support");
   const [selectedHistory, setSelectedHistory] = useState(1);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -400,14 +397,6 @@ export default function App() {
     { label: "Ошибка при загрузке файла", key: "file" as ScenarioKey },
   ];
 
-  if (auth.status === "loading") {
-    return <div className="auth-screen" aria-busy="true" />;
-  }
-
-  if (auth.status === "anonymous") {
-    return <AuthPage />;
-  }
-
   return (
     <>
       <header className="portal-header">
@@ -417,58 +406,16 @@ export default function App() {
         </a>
 
         <nav className="portal-nav-main" aria-label="Основная навигация">
-          {["Главная", "Закупки", "Товары", "Договоры", "Поддержка", "Аналитика"].map(item => (
-  	    <button
-    	      key={item}
-    	      className={`nav-item${
-      		(item === "Поддержка" && page === "support") ||
-      		(item === "Аналитика" && page === "admin")
-        	  ? " active"
-        	  : ""
-   	      }`}
-   	      aria-current={
-     		(item === "Поддержка" && page === "support") ||
-      		(item === "Аналитика" && page === "admin")
-        	  ? "page"
-        	  : undefined
-    	      }
-    	      onClick={() => {
-      		if (item === "Поддержка") {
-        	  setPage("support")
-      		}
-
-      		if (item === "Аналитика") {
-        	  setPage("admin")
-      		}
-    	      }}
-  	    >
-    	      {item}
-  	    </button>
-	  ))}
+          <button className={`nav-item${page === "support" ? " active" : ""}`} aria-current={page === "support" ? "page" : undefined} onClick={() => setPage("support")}>Поддержка</button>
+          <button className={`nav-item${page === "admin" ? " active" : ""}`} aria-current={page === "admin" ? "page" : undefined} onClick={() => setPage("admin")}>Аналитика</button>
         </nav>
 
         <div className="portal-header-right">
-          {auth.isStaff && (
-            <button
-              className={`nav-item${page === "admin" ? " active" : ""}`}
-              style={{ height: 52, fontSize: 13 }}
-              onClick={() => setPage(page === "admin" ? "support" : "admin")}
-              aria-current={page === "admin" ? "page" : undefined}
-            >
-              Администрирование
-            </button>
-          )}
           <button className="header-icon-btn" aria-label="Уведомления">
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
               <path d="M7.5 1a4.5 4.5 0 0 1 4.5 4.5v2l1 2H2l1-2V5.5A4.5 4.5 0 0 1 7.5 1z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
               <path d="M6 12.5a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
             </svg>
-          </button>
-          <button className="user-badge" aria-label="Профиль" title={auth.user?.email} onClick={() => auth.logout()}>
-            <div className="user-avatar" aria-hidden="true">
-              {(auth.user?.display_name || "?").trim().slice(0, 1).toUpperCase()}
-            </div>
-            <span className="user-name">{auth.user?.display_name}</span>
           </button>
         </div>
       </header>

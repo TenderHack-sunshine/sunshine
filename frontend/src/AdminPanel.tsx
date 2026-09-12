@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react"
-import { useAuth } from "./auth/AuthContext"
-import RoleManagement from "./admin/RoleManagement"
 import { apiGet } from "./api/client"
 
 type RouteStep = { label: string; status: "done" | "skipped" | "escalated" }
@@ -345,8 +343,6 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Dialog | null>(null)
-  const auth = useAuth()
-  const [tab, setTab] = useState<"log" | "roles">("log")
   const [filterDir, setFilterDir] = useState<FilterDir>("all")
   const [filterResult, setFilterResult] = useState<FilterResult>("all")
   const [search, setSearch] = useState("")
@@ -385,7 +381,7 @@ export default function AdminPanel() {
     return () => {
       window.clearInterval(interval)
     }
-  }, [auth.isStaff])
+  }, [])
 
     const stats = [
     {
@@ -441,41 +437,12 @@ export default function AdminPanel() {
     <div className="ra-page">
       <div className="ra-page-header">
         <div>
-          <h2 className="ra-page-title">
-            {tab === "log" ? "Журнал обращений" : "Пользователи и роли"}
-          </h2>
-          <p className="ra-page-sub">
-            {tab === "log"
-              ? "Маршрутизация и результаты обработки диалогов"
-              : "Заявки на статус тех.специалиста и назначение ролей"}
-          </p>
+          <h2 className="ra-page-title">Журнал обращений</h2>
+          <p className="ra-page-sub">Маршрутизация и результаты обработки диалогов</p>
         </div>
-        {auth.isAdmin && (
-          <div className="ra-filter-group" role="tablist" aria-label="Раздел администрирования">
-            <button
-              role="tab"
-              aria-selected={tab === "log"}
-              className={`ra-filter-btn${tab === "log" ? " active" : ""}`}
-              onClick={() => setTab("log")}
-            >
-              Журнал обращений
-            </button>
-            <button
-              role="tab"
-              aria-selected={tab === "roles"}
-              className={`ra-filter-btn${tab === "roles" ? " active" : ""}`}
-              onClick={() => setTab("roles")}
-            >
-              Пользователи и роли
-            </button>
-          </div>
-        )}
       </div>
 
-      {tab === "roles" && auth.isAdmin ? (
-        <RoleManagement />
-      ) : (
-        <>
+      <>
       <div className="ra-stats-row">
         {stats.map((s) => (
           <div key={s.label} className="ra-stat-card">
@@ -739,8 +706,7 @@ export default function AdminPanel() {
           </aside>
         )}
       </div>
-        </>
-      )}
+      </>
     </div>
   )
 }
