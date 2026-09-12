@@ -45,6 +45,44 @@ func (s *PostgresStore) AddMessage(ctx context.Context, message domain.Message) 
 	return err
 }
 
+func (s *PostgresStore) ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			id,
+			user_id,
+			original_message,
+			status,
+			topic,
+			support_level,
+			ai_status,
+			ai_answer,
+			confidence,
+			ai_sources,
+			created_at,
+			updated_at
+		FROM support_requests
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	items := make([]domain.SupportRequest, 0)
+
+	for rows.Next() {
+		request, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		items = append(items, request)
+	}
+
+	return items, rows.Err()
+}
+
 func (s *PostgresStore) ListMessages(ctx context.Context, requestID string) ([]domain.Message, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id,support_request_id,sender_type,text,created_at FROM messages WHERE support_request_id=$1 ORDER BY created_at,id`, requestID)
 	if err != nil {
@@ -148,7 +186,7 @@ func (s *PostgresStore) AnswerTicket(ctx context.Context, ticketID, operatorID, 
 	defer tx.Rollback(ctx)
 	ticket, err := scanTicket(tx.QueryRow(ctx, `UPDATE tickets SET status=$2,operator_answer=$3,answered_at=NOW(),updated_at=NOW() WHERE id=$1 AND status=$4 AND operator_id=$5 RETURNING id,user_id,support_request_id,status,topic,support_level,original_query,conversation_context,ai_answer,ai_confidence,ai_sources,operator_id,operator_answer,created_at,updated_at,taken_at,answered_at,closed_at`, ticketID, domain.TicketStatusAnswered, answer, domain.TicketStatusInProgress, operatorID))
 	if err != nil {
-		return domain.Ticket{}, normalizeTicketError(err)
+		return domain.Ticket{}, s.ticketMutationError(ctx, ticketID, err)
 	}
 	message.RequestID = ticket.SupportRequestID
 	if _, err := tx.Exec(ctx, `INSERT INTO messages (id,support_request_id,sender_type,text,created_at) VALUES ($1,$2,$3,$4,$5)`, message.ID, message.RequestID, message.Sender, message.Text, message.CreatedAt); err != nil {
@@ -168,18 +206,41 @@ func (s *PostgresStore) updateTicket(ctx context.Context, ticketID, query string
 	args = append([]any{ticketID}, args...)
 	ticket, err := scanTicket(s.pool.QueryRow(ctx, query, args...))
 	if err != nil {
-		return domain.Ticket{}, normalizeTicketError(err)
+		return domain.Ticket{}, s.ticketMutationError(ctx, ticketID, err)
 	}
 	return ticket, nil
 }
 
 func (s *PostgresStore) CreateFeedback(ctx context.Context, feedback domain.Feedback) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO feedback (id,user_id,support_request_id,ticket_id,rating,comment,resolved,created_at) SELECT $1,$2,$3,id,$4,$5,$6,$7 FROM tickets WHERE support_request_id=$3 UNION ALL SELECT $1,$2,$3,NULL,$4,$5,$6,$7 WHERE NOT EXISTS (SELECT 1 FROM tickets WHERE support_request_id=$3)`, feedback.ID, feedback.UserID, feedback.SupportRequestID, feedback.Rating, feedback.Comment, feedback.Resolved, feedback.CreatedAt)
+	_, err := s.pool.Exec(ctx, `INSERT INTO feedback (id,user_id,support_request_id,ticket_id,rating,comment,resolved,created_at) VALUES ($1,$2,$3,(SELECT id FROM tickets WHERE support_request_id=$3),$4,$5,$6,$7)`, feedback.ID, feedback.UserID, feedback.SupportRequestID, feedback.Rating, feedback.Comment, feedback.Resolved, feedback.CreatedAt)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return application.ErrDuplicateFeedback
 	}
 	return err
+}
+
+func (s *PostgresStore) OperationalAnalytics(ctx context.Context) (port.OperationalAnalyticsSnapshot, error) {
+	var result port.OperationalAnalyticsSnapshot
+
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'answered'),
+			COUNT(*) FILTER (WHERE status = 'escalated'),
+			COUNT(*) FILTER (WHERE status = 'need_clarification'),
+			COUNT(*) FILTER (WHERE status = 'processing')
+		FROM support_requests
+		WHERE created_at::date = CURRENT_DATE
+	`).Scan(
+		&result.Total,
+		&result.AnsweredByAI,
+		&result.Escalated,
+		&result.NeedClarification,
+		&result.InProgress,
+	)
+
+	return result, err
 }
 
 func (s *PostgresStore) Analytics(ctx context.Context) (port.AnalyticsSnapshot, error) {
@@ -241,11 +302,14 @@ func scanCounts(ctx context.Context, pool *pgxpool.Pool, query string, target ma
 	}
 	return rows.Err()
 }
-func normalizeTicketError(err error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return application.ErrInvalidState
+func (s *PostgresStore) ticketMutationError(ctx context.Context, ticketID string, err error) error {
+	if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, application.ErrNotFound) {
+		return err
 	}
-	return err
+	if _, getErr := s.GetTicket(ctx, ticketID); getErr != nil {
+		return getErr
+	}
+	return application.ErrInvalidState
 }
 func scanRequest(row pgx.Row) (domain.SupportRequest, error) {
 	var r domain.SupportRequest
