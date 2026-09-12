@@ -352,15 +352,33 @@ export default function App() {
 
         <nav className="portal-nav-main" aria-label="Основная навигация">
           {["Главная", "Закупки", "Товары", "Договоры", "Поддержка", "Аналитика"].map(item => (
-            <button
-              key={item}
-              className={`nav-item${item === "Поддержка" && page === "support" ? " active" : ""}`}
-              aria-current={item === "Поддержка" && page === "support" ? "page" : undefined}
-              onClick={() => item === "Поддержка" && setPage("support")}
-            >
-              {item}
-            </button>
-          ))}
+  	    <button
+    	      key={item}
+    	      className={`nav-item${
+      		(item === "Поддержка" && page === "support") ||
+      		(item === "Аналитика" && page === "admin")
+        	  ? " active"
+        	  : ""
+   	      }`}
+   	      aria-current={
+     		(item === "Поддержка" && page === "support") ||
+      		(item === "Аналитика" && page === "admin")
+        	  ? "page"
+        	  : undefined
+    	      }
+    	      onClick={() => {
+      		if (item === "Поддержка") {
+        	  setPage("support")
+      		}
+
+      		if (item === "Аналитика") {
+        	  setPage("admin")
+      		}
+    	      }}
+  	    >
+    	      {item}
+  	    </button>
+	  ))}
         </nav>
 
         <div className="portal-header-right">

@@ -44,6 +44,8 @@ func NewServer(support *application.SupportService, tickets *application.TicketS
 	mux.HandleFunc("POST /operator/tickets/{id}/answer", server.answerTicket)
 	mux.HandleFunc("POST /operator/tickets/{id}/close", server.closeTicket)
 	mux.HandleFunc("POST /feedback", server.createFeedback)
+	mux.HandleFunc("GET /analytics/overview", server.analyticsOverview)
+	mux.HandleFunc("GET /analytics/requests", server.analyticsRequests)
 	mux.HandleFunc("GET /analytics/summary", server.summary)
 	mux.HandleFunc("GET /analytics/topics", server.topics)
 	mux.HandleFunc("GET /analytics/feedback", server.feedbackStats)
@@ -69,6 +71,22 @@ func (s *Server) createRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("support request processed", "user_id", actor.UserID, "support_request_id", request.ID, "ai_status", request.AIStatus, "ticket_id", ticketID(ticket))
 	writeJSON(w, http.StatusCreated, userResponse(request, ticket))
+}
+
+func (s *Server) analyticsRequests(w http.ResponseWriter, r *http.Request) {
+	if _, ok := user(r, w); !ok {
+		return
+	}
+
+	result, err := s.analytics.Requests(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"requests": result,
+	})
 }
 
 func (s *Server) getRequest(w http.ResponseWriter, r *http.Request) {
@@ -218,6 +236,20 @@ func (s *Server) createFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, feedback)
+}
+
+func (s *Server) analyticsOverview(w http.ResponseWriter, r *http.Request) {
+	if _, ok := user(r, w); !ok {
+		return
+	}
+
+	result, err := s.analytics.OperationalOverview(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) summary(w http.ResponseWriter, r *http.Request) {

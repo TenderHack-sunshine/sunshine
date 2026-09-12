@@ -30,6 +30,7 @@ type RAGClient interface {
 type Store interface {
 	CreateSupportRequest(ctx context.Context, request domain.SupportRequest, initialMessage domain.Message) error
 	GetSupportRequest(ctx context.Context, requestID string) (domain.SupportRequest, error)
+	ListSupportRequests(ctx context.Context) ([]domain.SupportRequest, error)
 	AddMessage(ctx context.Context, message domain.Message) error
 	ListMessages(ctx context.Context, requestID string) ([]domain.Message, error)
 	ApplyRAGResult(ctx context.Context, requestID string, result ProcessResponse, aiMessage *domain.Message, ticket *domain.Ticket) error
@@ -42,6 +43,7 @@ type Store interface {
 	CloseTicket(ctx context.Context, ticketID, operatorID string) (domain.Ticket, error)
 	CreateFeedback(ctx context.Context, feedback domain.Feedback) error
 	Analytics(ctx context.Context) (AnalyticsSnapshot, error)
+	OperationalAnalytics(ctx context.Context) (OperationalAnalyticsSnapshot, error)
 }
 
 type AnalyticsSnapshot struct {
@@ -56,4 +58,11 @@ type AnalyticsSnapshot struct {
 	EscalationsByTopic   map[string]int64
 	NegativeByTopic      map[string]int64
 	FeedbackCountByTopic map[string]int64
+}
+type OperationalAnalyticsSnapshot struct {
+	Total             int64
+	AnsweredByAI      int64
+	Escalated         int64
+	NeedClarification int64
+	InProgress        int64
 }

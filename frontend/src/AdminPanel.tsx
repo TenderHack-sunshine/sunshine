@@ -1,6 +1,40 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 type RouteStep = { label: string; status: "done" | "skipped" | "escalated" }
+
+type OverviewResponse = {
+  total: number
+  answered_by_ai: number
+  answered_by_ai_percent: number
+  escalated: number
+  escalated_percent: number
+  need_clarification: number
+  need_clarification_percent: number
+  in_progress: number
+}
+
+type ApiRequest = {
+  id: string
+  original_message: string
+  status:
+    | "processing"
+    | "answered"
+    | "need_clarification"
+    | "blocked"
+    | "escalated"
+    | "ai_failed"
+  topic?: string
+  support_level?: string
+  ai_status: string
+  ai_answer?: string
+  confidence?: number
+  created_at: string
+  updated_at: string
+}
+
+type RequestsResponse = {
+  requests: ApiRequest[]
+}
 
 type Dialog = {
   id: string
@@ -12,11 +46,12 @@ type Dialog = {
   type: "non-technical" | "technical"
   direction: string
   directionLevel: "l1" | "l2" | "l3"
-  result: "answered" | "escalated" | "insufficient"
+  result: "answered" | "escalated" | "insufficient" | "clarification"
   steps: RouteStep[]
   userMsg: string
   answer?: string
   sources?: string[]
+  confidence?: number
 }
 
 const DIALOGS: Dialog[] = [
@@ -194,12 +229,14 @@ const RESULT_LABEL: Record<string, string> = {
   answered: "Ответ дан",
   escalated: "Передано",
   insufficient: "Нет ответа",
+  clarification: "Требуется уточнение",
 }
 
 const RESULT_CLASS: Record<string, string> = {
   answered: "ra-done",
   escalated: "ra-escalated",
   insufficient: "ra-insufficient",
+  clarification: "ra-insufficient",
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -207,23 +244,186 @@ const TYPE_LABEL: Record<string, string> = {
   technical: "Технический",
 }
 
-const STATS = [
-  { label: "Диалогов сегодня", value: "47", delta: "+12 за прошлые сутки" },
-  { label: "Ответил помощник", value: "36", sub: "77%" },
-  { label: "Передано специалисту", value: "11", sub: "23%" },
-  { label: "Требовалось уточнение", value: "18", sub: "38% диалогов" },
-]
-
 type FilterDir = "all" | "l1" | "l2" | "l3"
 type FilterResult = "all" | "answered" | "escalated"
 
+function apiRequestToDialog(request: ApiRequest): Dialog {
+  const created = new Date(request.created_at)
+
+  const time = created.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+
+  const level = request.support_level?.toLowerCase()
+
+  const directionLevel: "l1" | "l2" | "l3" =
+    level === "l2" ? "l2" : level === "l3" ? "l3" : "l1"
+
+  const direction =
+    directionLevel === "l3"
+      ? "Техническая поддержка"
+      : directionLevel === "l2"
+        ? "Методологическая поддержка"
+        : "Базовая поддержка"
+
+  const result: Dialog["result"] =
+    request.status === "escalated"
+      ? "escalated"
+      : request.status === "answered"
+        ? "answered"
+        : request.status === "need_clarification"
+          ? "clarification"
+          : "insufficient"
+
+  const type: Dialog["type"] =
+    directionLevel === "l3" ? "technical" : "non-technical"
+
+  const steps: RouteStep[] = [
+    {
+      label: "Запрос получен",
+      status: "done",
+    },
+    {
+      label: `Тема: ${request.topic || "не определена"}`,
+      status: "done",
+    },
+    {
+      label: `${direction}: ${request.support_level || "—"}`,
+      status: "done",
+    },
+  ]
+
+  if (request.status === "need_clarification") {
+    steps.push({
+      label: "Запрошено уточнение",
+      status: "done",
+    })
+  }
+
+  if (request.status === "escalated") {
+    steps.push({
+      label: "Передача специалисту",
+      status: "escalated",
+    })
+  }
+
+  if (request.status === "answered") {
+    steps.push({
+      label: "Ответ сформирован",
+      status: "done",
+    })
+  }
+
+  return {
+    id: request.id,
+    time,
+    date: "сегодня",
+
+    // user_id backend сейчас скрывает, поэтому временно:
+    user: "Пользователь",
+    org: "Портал поставщиков",
+
+    topic: request.topic || "Без темы",
+    type,
+    direction,
+    directionLevel,
+    result,
+    steps,
+    userMsg: request.original_message,
+    answer: request.ai_answer,
+    confidence: request.confidence,
+  }
+}
+
 export default function AdminPanel() {
-  const [selected, setSelected] = useState<Dialog | null>(DIALOGS[0])
+  const [overview, setOverview] = useState<OverviewResponse | null>(null)
+  const [dialogs, setDialogs] = useState<Dialog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const [selected, setSelected] = useState<Dialog | null>(null)
   const [filterDir, setFilterDir] = useState<FilterDir>("all")
   const [filterResult, setFilterResult] = useState<FilterResult>("all")
   const [search, setSearch] = useState("")
 
-  const filtered = DIALOGS.filter((d) => {
+    useEffect(() => {
+    async function loadAnalytics() {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const headers = {
+          "X-Portal-User-ID": "admin-demo",
+        }
+
+        const [overviewResponse, requestsResponse] = await Promise.all([
+          fetch("http://localhost:8081/analytics/overview", {
+            headers,
+          }),
+          fetch("http://localhost:8081/analytics/requests", {
+            headers,
+          }),
+        ])
+
+        if (!overviewResponse.ok || !requestsResponse.ok) {
+          throw new Error("Не удалось загрузить данные аналитики")
+        }
+
+        const overviewData: OverviewResponse =
+          await overviewResponse.json()
+
+        const requestsData: RequestsResponse =
+          await requestsResponse.json()
+
+        const mapped = requestsData.requests.map(apiRequestToDialog)
+
+        setOverview(overviewData)
+        setDialogs(mapped)
+
+        if (mapped.length > 0) {
+          setSelected(mapped[0])
+        }
+      } catch (err) {
+        console.error(err)
+        setError("Не удалось загрузить аналитику")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadAnalytics()
+
+    const interval = window.setInterval(loadAnalytics, 10000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [])
+
+    const stats = [
+    {
+      label: "Диалогов сегодня",
+      value: overview?.total ?? 0,
+    },
+    {
+      label: "Ответил помощник",
+      value: overview?.answered_by_ai ?? 0,
+      sub: `${Math.round(overview?.answered_by_ai_percent ?? 0)}%`,
+    },
+    {
+      label: "Передано специалисту",
+      value: overview?.escalated ?? 0,
+      sub: `${Math.round(overview?.escalated_percent ?? 0)}%`,
+    },
+    {
+      label: "Требовалось уточнение",
+      value: overview?.need_clarification ?? 0,
+      sub: `${Math.round(overview?.need_clarification_percent ?? 0)}% диалогов`,
+    },
+  ]
+
+  const filtered = dialogs.filter((d) => {
     if (filterDir !== "all" && d.directionLevel !== filterDir) return false
     if (filterResult !== "all" && d.result !== filterResult) return false
     if (search) {
@@ -238,6 +438,19 @@ export default function AdminPanel() {
     return true
   })
 
+  if (loading && dialogs.length === 0) {
+    return (
+      <div className="ra-page">
+        <div className="ra-page-header">
+          <div>
+            <h2 className="ra-page-title">Журнал обращений</h2>
+            <p className="ra-page-sub">Загрузка аналитики…</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="ra-page">
       <div className="ra-page-header">
@@ -250,14 +463,13 @@ export default function AdminPanel() {
       </div>
 
       <div className="ra-stats-row">
-        {STATS.map((s) => (
+        {stats.map((s) => (
           <div key={s.label} className="ra-stat-card">
             <div className="ra-stat-value">
               {s.value}
               {s.sub && <span className="ra-stat-pct">: {s.sub}</span>}
             </div>
             <div className="ra-stat-label">{s.label}</div>
-            {s.delta && <div className="ra-stat-delta">{s.delta}</div>}
           </div>
         ))}
       </div>
@@ -397,14 +609,21 @@ export default function AdminPanel() {
             <div className="ra-detail-section-title">Как обработан запрос</div>
 
             {[
-              { label: "Тип обращения", value: TYPE_LABEL[selected.type] },
+  	      { label: "Тип обращения", value: TYPE_LABEL[selected.type] },
               { label: "Тема", value: selected.topic },
               {
-                label: "Направление",
-                value: selected.direction,
-                level: selected.directionLevel,
-              },
-              { label: "Результат", value: RESULT_LABEL[selected.result] },
+    		label: "Направление",
+    		value: selected.direction,
+    		level: selected.directionLevel,
+  	      },
+  	      { label: "Результат", value: RESULT_LABEL[selected.result] },
+  	      {
+    		label: "Уверенность AI",
+    		value:
+      		  selected.confidence !== undefined
+        	    ? `${Math.round(selected.confidence * 100)}%`
+                    : "—",
+  	      },
             ].map((f) => (
               <div key={f.label} className="ra-detail-field">
                 <div className="ra-detail-field-label">{f.label}</div>
