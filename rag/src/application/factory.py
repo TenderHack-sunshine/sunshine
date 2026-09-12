@@ -34,7 +34,14 @@ def build_rag_service(settings: Settings | None = None, *, canonical_path: str |
     dense = official_dense if official_dense is not None else official_dense_if_ready(settings)
     retriever = load_two_path_retriever(canonical_path, ticket_index_path, official_dense=dense, final_candidates=settings.final_top_k, rrf_k=settings.rrf_k,
                                         official_dense_top_k=settings.dense_top_k, official_bm25_top_k=settings.bm25_top_k,
-                                        official_rrf_weight=settings.official_rrf_weight, ticket_rrf_weight=settings.ticket_rrf_weight)
+                                        official_rrf_weight=settings.official_rrf_weight, ticket_rrf_weight=settings.ticket_rrf_weight,
+                                        dense_fusion_weight=settings.dense_fusion_weight,
+                                        bm25_fusion_weight=settings.bm25_fusion_weight,
+                                        retrieval_strategy=settings.retrieval_strategy,
+                                        dense_primary_min_score=settings.dense_primary_min_score,
+                                        dense_primary_min_agreement=settings.dense_primary_min_agreement,
+                                        dense_primary_keep_top_k=settings.dense_primary_keep_top_k,
+                                        bm25_rescue_top_k=settings.bm25_rescue_top_k)
     reranker = reranker if reranker is not None else Reranker(settings.reranker_model_path)
     return RAGService(retriever, reranker=reranker, rerank_enabled=settings.rerank_enabled,
                       confidence=ConfidenceEvaluator(settings.confidence_min_sources, settings.confidence_min_official_score,

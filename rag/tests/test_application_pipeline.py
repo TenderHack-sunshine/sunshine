@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.application.pipeline import RAGService, SupportRouter
+from src.application.pipeline import ConfidenceEvaluator, RAGService, SupportRouter
 from src.core.config import Settings
 from src.routing.normalization import normalize_query
 
@@ -109,3 +109,21 @@ def test_partial_qdrant_index_is_ignored_and_complete_index_is_activated(monkeyp
     assert factory.official_dense_if_ready(settings) is None
     Store.points = 2
     assert factory.official_dense_if_ready(settings) is not None
+
+
+def test_ambiguous_query_uses_clarification_policy_before_retrieval():
+    retriever = FakeRetriever([_source()])
+    result = RAGService(retriever).ask("не работает")
+    assert result["status"] == "NEEDS_CLARIFICATION"
+    assert retriever.technical_calls == []
+
+
+def test_no_evidence_escalates_and_strong_official_evidence_answers():
+    assert RAGService(FakeRetriever()).ask("как добавить мчд")["status"] == "ESCALATE_TO_OPERATOR"
+    assert RAGService(FakeRetriever([_source()])).ask("как добавить мчд")["status"] == "ANSWER"
+
+
+def test_low_official_agreement_can_clarify_when_explicitly_configured():
+    evaluator = ConfidenceEvaluator(min_agreement=.5)
+    features = {"top_score": .9, "official_evidence_present": True, "num_ticket_candidates": 0, "retrieval_agreement": 0.0}
+    assert evaluator.decide("L1", [_source()], features) == ("NEEDS_CLARIFICATION", "official_retrieval_agreement_below_threshold")

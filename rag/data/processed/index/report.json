@@ -1,0 +1,33 @@
+{
+  "kb_chunks": 253,
+  "local_chunks": 25864,
+  "total_canonical_chunks": 26117,
+  "unique_chunk_ids": 26117,
+  "duplicate_chunk_ids": 0,
+  "empty_text_count": 0,
+  "source_type_distribution": {
+    "official_kb": 253,
+    "official_manual": 734,
+    "support_taxonomy": 86,
+    "support_ticket": 25044
+  },
+  "authority_distribution": {
+    "case_history": 25044,
+    "official": 987,
+    "taxonomy": 86
+  },
+  "support_level_distribution": {
+    "L1": 78,
+    "L2": 41,
+    "L3": 120,
+    "UNKNOWN": 14,
+    "null": 25864
+  },
+  "token_statistics": {
+    "min": 8,
+    "median": 95,
+    "mean": 123.10521882298886,
+    "p95": 315.0,
+    "max": 700
+  }
+}

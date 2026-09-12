@@ -19,6 +19,6 @@ class EvidenceGenerator:
         return {
             "answer": prefix + best["text"], "used_evidence": True,
             "evidence": [{key: best.get(key) for key in (
-                "source", "source_path", "page", "page_start", "section", "score", "authority", "source_type", "retrieval_method", "chunk_id",
+                "source", "source_path", "title", "page", "page_start", "section", "score", "authority", "source_type", "retrieval_method", "chunk_id",
             )}],
         }

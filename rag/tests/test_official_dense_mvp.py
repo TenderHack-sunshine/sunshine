@@ -97,7 +97,7 @@ def test_official_index_is_idempotent_and_has_no_ticket_vectors(tmp_path):
 def test_technical_query_fuses_dense_official_and_ticket_bm25_with_schema_and_timing():
     official = _chunk("official", "offer guide", "official_manual", "official")
     ticket = _chunk("ticket", "offer error resolution", "support_ticket", "case_history")
-    retriever = TwoPathRetriever.from_canonical([official, ticket], official_dense=_Dense([_dense_result(official)]))
+    retriever = TwoPathRetriever.from_canonical([official, ticket], official_dense=_Dense([_dense_result(official)]), retrieval_strategy="hybrid_rrf")
     trace = retriever.retrieve_with_trace("offer error", technical=True, top_k=5)
     assert trace["dense_available"] is True
     assert trace["fallback_used"] is False
@@ -111,13 +111,36 @@ def test_technical_query_fuses_dense_official_and_ticket_bm25_with_schema_and_ti
 
 def test_official_bm25_and_dense_duplicate_is_one_hybrid_rrf_result():
     official = _chunk("official", "offer guide", "official_manual", "official")
-    retriever = TwoPathRetriever.from_canonical([official], official_dense=_Dense([_dense_result(official)]))
+    retriever = TwoPathRetriever.from_canonical([official], official_dense=_Dense([_dense_result(official)]), retrieval_strategy="hybrid_rrf")
     trace = retriever.retrieve_with_trace("offer", technical=False, top_k=5)
     assert trace["dense_available"] is True
     assert trace["retrieval_mode"] == "HYBRID"
     assert len(trace["results"]) == 1
     assert trace["results"][0]["retrieval_method"] == "hybrid"
     assert trace["results"][0]["retrieval_methods"] == ["bm25", "dense"]
+
+
+def test_dense_primary_is_default_and_keeps_strong_dense_result_first():
+    dense_chunk = _chunk("dense", "unrelated manual", "official_manual", "official")
+    sparse_chunk = _chunk("sparse", "create offer procedure", "official_kb", "official")
+    retriever = TwoPathRetriever.from_canonical([dense_chunk, sparse_chunk], official_dense=_Dense([_dense_result(dense_chunk)]))
+    trace = retriever.retrieve_with_trace("create offer", technical=False, top_k=5)
+    assert trace["retrieval_strategy"] == "DENSE_PRIMARY"
+    assert trace["retrieval_mode"] == "DENSE_PRIMARY"
+    assert trace["dense_primary_used"] is True
+    assert trace["bm25_rescue_used"] is False
+    assert trace["results"][0]["chunk_id"] == "dense"
+
+
+def test_dense_primary_adds_sparse_rescue_when_dense_evidence_is_weak():
+    dense_chunk = _chunk("dense", "unrelated manual", "official_manual", "official")
+    sparse_chunk = _chunk("sparse", "create offer procedure", "official_kb", "official")
+    weak_dense = {**_dense_result(dense_chunk), "raw_score": .1, "score": .1}
+    retriever = TwoPathRetriever.from_canonical([dense_chunk, sparse_chunk], official_dense=_Dense([weak_dense]))
+    trace = retriever.retrieve_with_trace("create offer", technical=False, top_k=5)
+    assert trace["retrieval_mode"] == "DENSE_PRIMARY_RESCUE"
+    assert trace["bm25_rescue_used"] is True
+    assert [item["chunk_id"] for item in trace["results"][:2]] == ["dense", "sparse"]
 
 
 def test_dense_timeout_keeps_official_bm25_fallback_mode():
@@ -127,6 +150,7 @@ def test_dense_timeout_keeps_official_bm25_fallback_mode():
     assert trace["dense_available"] is False
     assert trace["fallback_used"] is True
     assert trace["retrieval_mode"] == "BM25_FALLBACK"
+    assert trace["bm25_fallback_used"] is True
 
 
 def test_dense_embedding_or_qdrant_failure_uses_official_bm25_fallback():

@@ -45,8 +45,9 @@ def compact_evidence(candidates: list[dict], *, max_per_document: int = 2) -> li
             previous["merged_chunk_ids"] = [*previous.get("merged_chunk_ids", [previous["chunk_id"]]), item["chunk_id"]]
             continue
         unique.append(dict(item))
-    # Stable sort keeps relevance within each authority tier.
-    return sorted(unique, key=lambda item: (item.get("authority") == "case_history", -float(item.get("score", 0.0))))
+    # Stable sort preserves retriever ranking within each authority tier. In
+    # particular, BM25 and dense raw scores must never reorder one another.
+    return sorted(unique, key=lambda item: item.get("authority") == "case_history")
 
 
 def tagged_context(evidence: list[dict]) -> str:

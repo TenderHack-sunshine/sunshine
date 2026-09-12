@@ -2,52 +2,104 @@
 .env
 .env.*
 !.env.example
+
 .venv/
 venv/
 env/
+
 __pycache__/
 *.py[cod]
+
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .pyright/
 .hypothesis/
+
 .coverage
 coverage.xml
 htmlcov/
+
 node_modules/
+
 
 # Build and packaging artifacts
 build/
 dist/
 *.egg-info/
 
-# Hackathon source data and generated artifacts (inside the RAG project)
+
+# ============================================================
+# RAG data
+# ============================================================
+
+# Keep placeholder directories
 !rag/data/raw/manuals/.gitkeep
 !rag/data/raw/tickets/.gitkeep
-rag/data/raw/zakupki_kb/*
 !rag/data/raw/zakupki_kb/.gitkeep
-# Keep the original corpus in Git: it is required to reproduce ingestion.
-# These exceptions must follow the fetched-KB rule above.
+!rag/data/processed/.gitkeep
+!rag/data/indexes/.gitkeep
+
+
+# ------------------------------------------------------------
+# Raw source data
+# ------------------------------------------------------------
+
+# Fetched / temporary knowledge base files are ignored by default
+rag/data/raw/zakupki_kb/*
+
+# Keep the original corpus required for reproducible ingestion
 !rag/data/raw/**/*.pdf
 !rag/data/raw/**/*.PDF
 !rag/data/raw/**/*.xlsx
 !rag/data/raw/**/*.XLSX
 !rag/data/raw/**/*.xls
 !rag/data/raw/**/*.XLS
+
+
+# ------------------------------------------------------------
+# Runtime RAG artifacts required by the application
+# ------------------------------------------------------------
+
+# Ignore generated processed data by default
 rag/data/processed/*
-!rag/data/processed/.gitkeep
+
+# But keep runtime knowledge index used by the RAG service
+!rag/data/processed/index/
+!rag/data/processed/index/**
+!rag/data/processed/index/all_chunks.jsonl
+
+
+# Ignore generated indexes by default
 rag/data/indexes/*
-!rag/data/indexes/.gitkeep
+
+# Keep indexes required for runtime
+!rag/data/indexes/support_tickets_bm25.pkl
+
+# Add more runtime indexes here if needed, for example:
+# !rag/data/indexes/manuals_bm25.pkl
+# !rag/data/indexes/chunks_metadata.json
+
+
+# ------------------------------------------------------------
+# Vector DB local storage
+# ------------------------------------------------------------
+
 rag/qdrant_storage/
 rag/qdrant_data/
 
+
+# ------------------------------------------------------------
+# Local model weights
+# ------------------------------------------------------------
+
+rag/models/*
+!rag/models/.gitkeep
+
+
 # Local runtime/log files and OS metadata
 *.log
+
 .DS_Store
 Thumbs.db
 ~$*
-
-# Locally downloaded model weights
-rag/models/*
-!rag/models/.gitkeep

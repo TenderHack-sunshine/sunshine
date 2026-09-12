@@ -36,7 +36,14 @@ class Settings:
     dense_top_k: int = int(os.getenv("DENSE_TOP_K", "20"))
     fusion_top_k: int = int(os.getenv("FUSION_TOP_K", "20"))
     final_top_k: int = int(os.getenv("FINAL_TOP_K", "5"))
+    retrieval_strategy: str = os.getenv("RETRIEVAL_STRATEGY", "dense_primary").strip().lower()
+    dense_primary_min_score: float = float(os.getenv("DENSE_PRIMARY_MIN_SCORE", "0.55"))
+    dense_primary_min_agreement: float = float(os.getenv("DENSE_PRIMARY_MIN_AGREEMENT", "0.0"))
+    dense_primary_keep_top_k: int = int(os.getenv("DENSE_PRIMARY_KEEP_TOP_K", "3"))
+    bm25_rescue_top_k: int = int(os.getenv("BM25_RESCUE_TOP_K", "3"))
     rrf_k: int = int(os.getenv("RRF_K", "60"))
+    dense_fusion_weight: float = float(os.getenv("DENSE_FUSION_WEIGHT", "1.0"))
+    bm25_fusion_weight: float = float(os.getenv("BM25_FUSION_WEIGHT", "1.0"))
     official_rrf_weight: float = float(os.getenv("OFFICIAL_RRF_WEIGHT", "1.0"))
     ticket_rrf_weight: float = float(os.getenv("TICKET_RRF_WEIGHT", "1.0"))
     min_evidence_score: float = float(os.getenv("MIN_EVIDENCE_SCORE", "0.02"))
@@ -56,6 +63,20 @@ class Settings:
     zakupki_kb_max_chunk_tokens: int = int(os.getenv("ZAKUPKI_KB_MAX_CHUNK_TOKENS", "700"))
 
     def __post_init__(self) -> None:
+        if self.rrf_k <= 0:
+            raise ValueError("RRF_K must be a positive integer")
+        if self.dense_fusion_weight < 0 or self.bm25_fusion_weight < 0:
+            raise ValueError("DENSE_FUSION_WEIGHT and BM25_FUSION_WEIGHT must be non-negative")
+        if self.dense_fusion_weight == 0 and self.bm25_fusion_weight == 0:
+            raise ValueError("At least one fusion weight must be positive")
+        if self.retrieval_strategy not in {"dense_primary", "hybrid_rrf", "bm25_only"}:
+            raise ValueError("RETRIEVAL_STRATEGY must be dense_primary, hybrid_rrf, or bm25_only")
+        if self.dense_primary_min_score < 0:
+            raise ValueError("DENSE_PRIMARY_MIN_SCORE must be non-negative")
+        if self.dense_primary_min_agreement < 0 or self.dense_primary_min_agreement > 1:
+            raise ValueError("DENSE_PRIMARY_MIN_AGREEMENT must be between 0 and 1")
+        if self.dense_primary_keep_top_k < 1 or self.bm25_rescue_top_k < 1:
+            raise ValueError("Dense-primary keep/rescue top-k values must be positive")
         object.__setattr__(self, "data_dir", _path_env("DATA_DIR", self.root_dir / "data") if self.data_dir is None else Path(self.data_dir))
         object.__setattr__(self, "model_dir", _path_env("MODEL_DIR", self.root_dir / "models") if self.model_dir is None else Path(self.model_dir))
 

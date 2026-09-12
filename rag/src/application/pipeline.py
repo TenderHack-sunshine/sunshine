@@ -85,6 +85,8 @@ class ConfidenceEvaluator:
         ticket = features["num_ticket_candidates"] > 0
         if official and features["top_score"] < self.min_official_score:
             return "ESCALATE_TO_OPERATOR", "official_score_below_threshold"
+        if official and self.min_agreement > 0 and features["retrieval_agreement"] < self.min_agreement:
+            return "NEEDS_CLARIFICATION", "official_retrieval_agreement_below_threshold"
         if features["retrieval_agreement"] < self.min_agreement and not official:
             return "ESCALATE_TO_OPERATOR", "weak_retrieval_agreement"
         if route == "L3" and not (official or ticket):
@@ -118,12 +120,14 @@ class RAGService:
         if prepared["moderation"]["contains_profanity"]:
             return {**base, "status": "REFUSE_PROFANITY", "route": None, "answer": PROFANITY_MESSAGE,
                     "diagnostics": {"profanity_detected": True, "dense_available": False, "fallback_used": False, "retrieval_mode": "NONE", "retrieved_count": 0, "reranker_used": False,
+                                    "retrieval_strategy": "NONE", "dense_primary_used": False, "bm25_rescue_used": False, "bm25_fallback_used": False,
                                     "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         normalized = prepared["normalized_query"]
         assert normalized is not None
         if self.context.needs_clarification(normalized):
             return {**base, "status": "NEEDS_CLARIFICATION", "route": None, "answer": CLARIFICATION_MESSAGE,
                     "diagnostics": {"profanity_detected": False, "dense_available": False, "fallback_used": False, "retrieval_mode": "NONE", "retrieved_count": 0, "reranker_used": False,
+                                    "retrieval_strategy": "NONE", "dense_primary_used": False, "bm25_rescue_used": False, "bm25_fallback_used": False,
                                     "timings_ms": {"total": (perf_counter() - started) * 1000}}}
         route = self.router.classify(normalized)
         trace = self.retriever.retrieve_with_trace(normalized, technical=route["technical"])
@@ -150,6 +154,11 @@ class RAGService:
                 "diagnostics": {"profanity_detected": False, "dense_available": trace.get("dense_available", False), "fallback_used": trace.get("fallback_used", False),
                                 "retrieval_mode": trace.get("retrieval_mode", "BM25_ONLY"), "dense_candidates": trace.get("dense_candidates", 0),
                                 "bm25_candidates": trace.get("bm25_candidates", 0), "hybrid_candidates": trace.get("hybrid_candidates", 0),
+                                "final_candidates": trace.get("final_candidates", len(candidates)),
+                                "retrieval_strategy": trace.get("retrieval_strategy", "BM25_ONLY"),
+                                "dense_primary_used": trace.get("dense_primary_used", False),
+                                "bm25_rescue_used": trace.get("bm25_rescue_used", False),
+                                "bm25_fallback_used": trace.get("bm25_fallback_used", False),
                                 "retrieved_count": len(candidates), "reranker_enabled": self.rerank_enabled, "reranker_available": reranker_available,
                                 "reranker_used": reranker_used, "reranker_latency_ms": float(getattr(self.reranker, "last_latency_ms", 0.0)),
                                 "reranker_candidates": min(len(trace["results"]), self.rerank_top_n) if self.rerank_enabled else 0,
