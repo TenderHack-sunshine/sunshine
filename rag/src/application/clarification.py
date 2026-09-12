@@ -24,8 +24,9 @@ class ClarificationDecision:
 class ClarificationPolicy:
     """Narrow, configurable clarification rules for underspecified user intent."""
 
-    _failure_prefixes = ("не могу", "не работает", "не открыва", "не груз", "не подписыва", "ошибка", "сбой", "завис")
+    _failure_prefixes = ("не могу", "не получается", "не работает", "не открыва", "не груз", "не подписыва", "ошибка", "сбой", "завис")
     _broad_policy_heads = {"правила", "регламент", "условия"}
+    _underspecified_lifecycle_actions = {"исправить", "отменить", "изменить", "отозвать"}
 
     def __init__(self, *, enabled: bool = True, short_failure_max_tokens: int = 3, broad_policy_max_tokens: int = 4):
         if short_failure_max_tokens < 1 or broad_policy_max_tokens < 1:
@@ -46,4 +47,8 @@ class ClarificationPolicy:
             return ClarificationDecision(True, "SHORT_FAILURE_QUERY")
         if route == "L2" and len(tokens) <= self.broad_policy_max_tokens and tokens and tokens[0] in self._broad_policy_heads:
             return ClarificationDecision(True, "BROAD_POLICY_QUERY")
+        # A lifecycle action without a named document type or workflow cannot
+        # safely select one of several portal procedures.
+        if len(tokens) <= 7 and any(action in tokens for action in self._underspecified_lifecycle_actions) and "закупку" in tokens:
+            return ClarificationDecision(True, "UNDERSPECIFIED_LIFECYCLE_ACTION")
         return ClarificationDecision(False)

@@ -80,6 +80,7 @@ class ConfidenceEvaluator:
         official = [item for item in candidates if item.get("authority") == "official"]
         tickets = [item for item in candidates if item.get("source_type") == "support_ticket"]
         bm25_ids = {item.get("chunk_id") for item in trace.get("official_bm25", [])}
+        bm25_scores = [float(item.get("raw_score", item.get("score", 0.0)) or 0.0) for item in trace.get("official_bm25", [])]
         # ``official_dense`` is the bounded authoritative collection: official
         # KB/manual chunks plus the curated support taxonomy.  Its cosine scores
         # share one scale even though taxonomy has authority="taxonomy" rather
@@ -95,6 +96,8 @@ class ConfidenceEvaluator:
         official_confidence_score = dense_scores[0] if dense_scores else None
         return {
             "top_score": scores[0] if scores else 0.0,
+            "bm25_top_score": bm25_scores[0] if bm25_scores else None,
+            "dense_top_score": dense_scores[0] if dense_scores else None,
             "official_confidence_score": official_confidence_score,
             "official_confidence_score_method": "dense_cosine" if dense_scores else None,
             "dense_top1_top2_gap": dense_scores[0] - dense_scores[1] if len(dense_scores) > 1 else (dense_scores[0] if dense_scores else None),

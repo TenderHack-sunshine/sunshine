@@ -32,6 +32,12 @@ def test_ambiguity_policy_does_not_block_specific_or_informational_queries(query
     assert ClarificationPolicy().evaluate(query, route).triggered is False
 
 
+def test_ambiguity_policy_clarifies_underspecified_lifecycle_action():
+    result = ClarificationPolicy().evaluate("разрешено ли исправить закупку после завершения", "L1")
+    assert result.triggered is True
+    assert result.reason == "UNDERSPECIFIED_LIFECYCLE_ACTION"
+
+
 class Retriever:
     def __init__(self, candidates):
         self.candidates = candidates
