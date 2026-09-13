@@ -175,6 +175,11 @@ def extract_intent_frame(query: str, lexicon: DomainLexicon) -> IntentFrame:
             missing.append("object")
         if not action:
             missing.append("action")
+        # "Check" names a broad class rather than a portal operation. The
+        # result depends on what is being checked (status, attributes,
+        # availability, or validity), so one target facet is required.
+        if action == "check":
+            missing.append("check_target")
     elif intent == "navigation" and not obj:
         missing.append("object_or_goal")
     elif intent == "troubleshooting":

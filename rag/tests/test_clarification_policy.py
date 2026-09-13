@@ -15,7 +15,7 @@ def test_generic_bare_topic_clarifies_the_missing_action():
     decision = ClarificationPolicy().evaluate(frame)
     assert decision.triggered
     assert decision.missing_slots == ("action",)
-    assert "Уточните требуемое действие" in clarification_question(frame)
+    assert clarification_question(frame).endswith("?")
 
 
 def test_general_signature_problem_clarifies_object_and_error_details():

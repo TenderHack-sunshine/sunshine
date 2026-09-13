@@ -21,8 +21,13 @@ class ExtractiveGenerator:
         prefix = ""
         if best.get("authority") == "case_history":
             prefix = "Похожее историческое обращение (проверьте применимость решения):\n"
+        # Source chunks contain indexing headers (title/category/section).
+        # They are evidence metadata, not prose for a portal user.
+        text = str(best["text"]).strip()
+        if "\n\n" in text:
+            text = text.split("\n\n", 1)[1].strip()
         return {
-            "answer": prefix + best["text"], "used_evidence": True,
+            "answer": prefix + text, "used_evidence": True,
             "evidence": [{key: best.get(key) for key in (
                 "source", "source_path", "title", "page", "page_start", "section", "score", "authority", "source_type", "retrieval_method", "chunk_id",
             )}],
