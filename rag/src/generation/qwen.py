@@ -144,6 +144,16 @@ GENERATION_SCHEMA = {
     "additionalProperties": False,
 }
 
+# The model is a formatter, not a router or a search engine.  It receives only
+# verified chunks and must preserve a useful response shape for the intent.
+SYSTEM_PROMPT = """Ты — помощник Портала. Отвечай только по переданным официальным
+фрагментам и не пересказывай технические поля источника (Название, Категория,
+Раздел, chunk_id). Верни JSON по schema. Для how_to дай короткое вступление и
+нумерованные шаги только из evidence. Для definition дай определение в 2–4
+предложениях. Для troubleshooting назови подтвержденную проверку и следующий
+шаг. Не добавляй факты, меню, сроки или причины, которых нет в evidence.
+used_chunk_ids должны содержать только IDs использованных фрагментов."""
+
 
 def clean_generated_answer(text: str) -> str:
     """Remove a recurring Qwen presentation template, without adding content.
@@ -159,7 +169,7 @@ def clean_generated_answer(text: str) -> str:
     return " ".join(value.split())
 
 
-def build_grounded_prompt(query: str, evidence: list[dict]) -> str:
+def build_grounded_prompt(query: str, evidence: list[dict], answer_type: str | None = None) -> str:
     blocks: list[str] = []
     for number, item in enumerate(evidence, start=1):
         text = str(item.get("text", "")).strip()
@@ -167,7 +177,7 @@ def build_grounded_prompt(query: str, evidence: list[dict]) -> str:
             continue
         blocks.append("[Источник {0}]\nchunk_id: {1}\ndocument_id: {2}\ntext: {3}".format(
             number, item.get("chunk_id", "unknown"), item.get("document_id", "unknown"), text))
-    return f"{SYSTEM_PROMPT}\n\n" + "\n\n".join(blocks) + f"\n\nВопрос пользователя:\n{query}\n\nОтвет:"
+    return f"{SYSTEM_PROMPT}\n\nТребуемый тип ответа: {answer_type or 'definition'}\n\n" + "\n\n".join(blocks) + f"\n\nВопрос пользователя:\n{query}\n\nОтвет:"
 
 
 def select_generation_evidence(evidence: list[dict], max_context_chars: int, max_chunks: int = 3,
@@ -234,7 +244,7 @@ class QwenGenerator:
         self.allow_extractive_fallback = allow_extractive_fallback
         self._fallback = ExtractiveGenerator()
 
-    def answer(self, evidence: list[dict], *, query: str | None = None) -> dict:
+    def answer(self, evidence: list[dict], *, query: str | None = None, answer_type: str | None = None) -> dict:
         if not query:
             raise GenerationError("Qwen generator requires the original user query")
         started = perf_counter()
@@ -246,10 +256,10 @@ class QwenGenerator:
             if callable(status):
                 status()
             selected = select_generation_evidence(evidence, self.max_context_chars, self.max_evidence_chunks, query)
-            prompt = build_grounded_prompt(query, selected)
+            prompt = build_grounded_prompt(query, selected, answer_type=answer_type)
             response = self.client.generate(prompt, self.max_new_tokens, self.max_seconds)
             retry_attempted = False
-            answer, used_chunk_ids = self._structured_answer(response.text, selected, require_schema=bool(getattr(self.client, "schema_enforced", False)))
+            answer, used_chunk_ids = self._structured_answer(response.text, selected, require_schema=bool(getattr(self.client, "schema_enforced", False)), expected_answer_type=answer_type)
             invalid_reason = self._invalid_reason(answer, response.generated_tokens, self.max_new_tokens,
                                                   response.truncated, response.finish_reason)
             # The model can have correct grounded evidence but reach the output
@@ -266,7 +276,7 @@ class QwenGenerator:
                     raise InvalidGeneration(invalid_reason, response.text,
                                             self._diagnostics(response, selected, prompt, retry_attempted))
                 response = self.client.generate(prompt, retry_budget, remaining_seconds)
-                answer, used_chunk_ids = self._structured_answer(response.text, selected, require_schema=bool(getattr(self.client, "schema_enforced", False)))
+                answer, used_chunk_ids = self._structured_answer(response.text, selected, require_schema=bool(getattr(self.client, "schema_enforced", False)), expected_answer_type=answer_type)
                 invalid_reason = self._invalid_reason(answer, response.generated_tokens, retry_budget,
                                                       response.truncated, response.finish_reason)
             generation = self._diagnostics(response, selected, prompt, retry_attempted)
@@ -308,7 +318,7 @@ class QwenGenerator:
                 "retry_attempted": retry_attempted, "retry_count": int(retry_attempted)}
 
     @staticmethod
-    def _structured_answer(raw: str, selected: list[dict], *, require_schema: bool = False) -> tuple[str, list[str]]:
+    def _structured_answer(raw: str, selected: list[dict], *, require_schema: bool = False, expected_answer_type: str | None = None) -> tuple[str, list[str]]:
         """Validate the local JSON Schema response and evidence references."""
         value = raw.strip()
         if not value.startswith("{"):
@@ -321,6 +331,8 @@ class QwenGenerator:
             raise InvalidGeneration("invalid_structured_output", raw) from error
         if not isinstance(decoded, dict) or decoded.get("supported") is not True or not isinstance(decoded.get("answer"), str):
             raise InvalidGeneration("unsupported_structured_output", raw)
+        if expected_answer_type and decoded.get("answer_type") != expected_answer_type:
+            raise InvalidGeneration("wrong_answer_type", raw)
         allowed = {str(item.get("chunk_id")) for item in selected if item.get("chunk_id")}
         used = decoded.get("used_chunk_ids")
         if not isinstance(used, list) or not used or any(not isinstance(item, str) or item not in allowed for item in used):

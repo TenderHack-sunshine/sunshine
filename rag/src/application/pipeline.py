@@ -15,7 +15,7 @@ from src.application.evidence import compact_evidence, tagged_context
 from src.application.evidence_sufficiency import EvidenceSufficiencyChecker
 from src.application.knowledge_gap import knowledge_gap
 from src.routing.normalization import normalize_query
-from src.routing.intent import DomainLexicon, extract_intent_frame
+from src.routing.intent import DomainLexicon, IntentFrame, extract_intent_frame
 from src.routing.technical import TechnicalRouter
 from src.safety.profanity import ProfanityDetector, RuleProfanityDetector
 
@@ -70,6 +70,39 @@ class ContextAnalyzer:
 class NoopReranker:
     def rerank(self, query: str, candidates: list[dict], top_k: int) -> list[dict]:
         return candidates[:top_k]
+
+
+def _rank_for_intent(candidates: list[dict], frame: IntentFrame) -> list[dict]:
+    """Select answer-shaped evidence before the local generator sees it."""
+    if frame.intent not in {"how_to", "navigation", "definition"}:
+        return candidates
+
+    def score(item: dict) -> tuple[int, int]:
+        title = str(item.get("title") or "").casefold()
+        text = str(item.get("text") or "").casefold()
+        value = 0
+        if frame.intent == "definition":
+            value += 5 if any(marker in title for marker in ("что такое", "определени")) else 0
+        else:
+            action = frame.action or ""
+            action_terms = {
+                "create": ("созда", "формир", "оформ"),
+                "add_upload": ("добав", "загруз", "импорт"),
+                "find_open": ("найт", "откры", "перейт"),
+                "fill": ("заполн", "внест"),
+                "change_replace": ("измен", "замен", "редакт"),
+                "remove_revoke": ("удал", "отозв", "аннулир"),
+                "sign": ("подпис", "утверд"),
+                "send": ("отправ", "направ", "опублик"),
+                "fix": ("исправ", "устран", "реш"),
+            }.get(action, ())
+            value += 5 if any(term in title for term in action_terms) else 0
+            value += 3 if title.startswith(("как ", "способы ", "инструкция")) else 0
+            value -= 4 if any(marker in title for marker in ("ошибка", "не можем", "не работает", "отсутств")) else 0
+            value -= 3 if "что такое" in title or "срок действия" in title else 0
+        return value, len(text)
+
+    return [item for _, item in sorted(enumerate(candidates), key=lambda pair: (-score(pair[1])[0], -score(pair[1])[1], pair[0]))]
 
 
 class ConfidenceEvaluator:
@@ -165,11 +198,11 @@ class RAGService:
         value.update(extra)
         return value
 
-    def _call_generator(self, query: str, candidates: list[dict]) -> dict:
+    def _call_generator(self, query: str, candidates: list[dict], answer_type: str | None = None) -> dict:
         """Accept legacy extractive test adapters while Qwen gets the query."""
         parameters = inspect.signature(self.generator.answer).parameters
         if "query" in parameters:
-            return self.generator.answer(candidates, query=query)
+            return self.generator.answer(candidates, query=query, answer_type=answer_type)
         return self.generator.answer(candidates)
 
     def _generation_evidence(self, query: str, candidates: list[dict]) -> list[dict]:
@@ -242,6 +275,7 @@ class RAGService:
         if self.lexicon.objects and (intent_frame.object or intent_frame.action):
             candidates = compatible
         trace["incompatible_candidates"] = incompatible
+        candidates = _rank_for_intent(candidates, intent_frame)
         reranker_used = False
         reranker_available = bool(getattr(self.reranker, "available", self.rerank_enabled))
         if self.rerank_enabled and reranker_available:
@@ -268,7 +302,7 @@ class RAGService:
             try:
                 # Generators receive the unmodified user wording; retrieval still
                 # operates on ``normalized`` as before.
-                generated = self._call_generator(query, generation_evidence)
+                generated = self._call_generator(query, generation_evidence, intent_frame.intent if intent_frame.intent in {"definition", "how_to", "troubleshooting", "rules", "navigation"} else None)
                 generation = self._generation_diagnostics()
                 generation.update({"invoked": True, **generated.get("generation", {})})
                 grounded = validate_grounding(generated.get("answer", ""), generation_evidence)
