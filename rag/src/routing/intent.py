@@ -31,7 +31,7 @@ _ACTION_CLASSES = {
     "check": ("провер", "узнат", "контрол"),
 }
 _HUMAN_REQUEST = ("оператор", "специалист", "человек", "поддержк")
-_ERROR_MARKERS = ("ошиб", "сбой", "не работа", "не открыва", "не загружа", "не подписыва", "не отобража")
+_ERROR_MARKERS = ("ошиб", "проблем", "сбой", "не работа", "не открыва", "не загружа", "не подписыва", "не отобража")
 _DEFINITION_PREFIXES = ("что такое", "что это", "определени")
 _NAVIGATION_PREFIXES = ("где", "куда", "в каком разделе", "как найти")
 _RULES_MARKERS = ("правил", "регламент", "требован", "услови", "порядок")
@@ -85,7 +85,9 @@ class DomainLexicon:
                 # Require every meaningful term for short taxonomy labels, or
                 # a strong majority for longer labels. This avoids matching a
                 # document merely because of a generic verb.
-                required = max(1, (len(phrase_terms) + 1) // 2)
+                # A multi-word instructional title is not an object synonym:
+                # matching just its noun would confuse unrelated actions.
+                required = len(phrase_terms)
                 if overlap < required:
                     continue
                 score = overlap / len(phrase_terms)

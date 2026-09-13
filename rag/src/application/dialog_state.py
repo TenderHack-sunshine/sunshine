@@ -44,8 +44,11 @@ def update_dialog_state(previous: DialogState, frame: IntentFrame, user_text: st
     if object_value and "object" in missing:
         missing.remove("object")
     merged["missing_slots"] = missing
-    resolved_parts = [item for item in (merged.get("action"), merged.get("object"), merged.get("stage"), merged.get("error_text")) if item]
-    resolved = " ".join(dict.fromkeys(str(item) for item in resolved_parts)) or user_text.strip()
+    # Action labels are internal; always keep the user's natural language.
+    resolved = user_text.strip()
+    normalized_user = resolved.casefold()
+    if object_value and previous.pending_clarification and object_value.casefold() not in normalized_user:
+        resolved = f"{resolved} {object_value}".strip()
     clarification_count = previous.clarification_count + 1 if missing else 0
     return DialogState(intent_frame=merged, pending_clarification=tuple(missing), clarification_count=clarification_count,
                        resolved_query=resolved, handoff_offered=previous.handoff_offered and bool(missing),

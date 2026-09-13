@@ -41,6 +41,8 @@ class ClarificationPolicy:
 
 def clarification_question(frame: IntentFrame) -> str:
     slots = set(frame.missing_slots)
+    if frame.intent == "troubleshooting" and ({"object", "error_text_or_stage", "symptom"} & slots):
+        return "Укажите, при каком действии возникла проблема, что вы подписываете или где авторизуетесь, а также точный текст или код ошибки и этап её появления."
     if {"error_text_or_stage", "symptom"} & slots:
         return "Укажите точный текст или код ошибки и этап, на котором она возникает."
     if "object" in slots or "object_or_goal" in slots or "subject" in slots:

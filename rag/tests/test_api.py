@@ -39,7 +39,7 @@ def test_api_uses_persisted_slots_not_context_concatenation():
     first = RAGAPI(service).process({"query": "экспериментальный реестр"})
     assert first["dialog_state"]["pending_clarification"] == ["action"]
     second = RAGAPI(service).process({"query": "добавить", "dialog_state": first["dialog_state"], "context": [{"text": "untrusted old history"}]})
-    assert service.query == "add_upload экспериментальный реестр"
+    assert service.query == "добавить экспериментальный реестр"
     assert "untrusted" not in service.query
 
 
