@@ -79,6 +79,7 @@ export type RequestStatus =
   | "processing"
   | "answered"
   | "need_clarification"
+  | "offer_handoff"
   | "blocked"
   | "escalated"
   | "ai_failed";

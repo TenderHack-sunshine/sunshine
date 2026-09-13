@@ -36,10 +36,19 @@ def frame_evidence(candidate: dict, lexicon: DomainLexicon) -> EvidenceFrame:
 def compatibility(intent: IntentFrame, evidence: EvidenceFrame) -> tuple[bool, str]:
     if evidence.source_authority == "case_history" and intent.intent != "troubleshooting":
         return False, "CASE_HISTORY_NOT_ALLOWED_FOR_INTENT"
-    if intent.object and evidence.objects and intent.object not in evidence.objects:
+    if intent.object and evidence.objects and not any(_same_object(intent.object, item) for item in evidence.objects):
         return False, "OBJECT_MISMATCH"
+    if intent.action and intent.intent in {"how_to", "navigation"} and not evidence.actions:
+        return False, "ACTION_NOT_EVIDENCED"
     if intent.action and evidence.actions and intent.action not in evidence.actions:
         return False, "ACTION_MISMATCH"
     if intent.intent == "definition" and evidence.answer_types and "definition" not in evidence.answer_types:
         return False, "ANSWER_TYPE_MISMATCH"
     return True, "COMPATIBLE"
+
+
+def _same_object(left: str, right: str) -> bool:
+    """Compare corpus-derived object labels across ordinary word forms."""
+    left_terms = {term[:5] for term in left.casefold().split() if len(term) >= 4}
+    right_terms = {term[:5] for term in right.casefold().split() if len(term) >= 4}
+    return bool(left_terms and right_terms and left_terms & right_terms)

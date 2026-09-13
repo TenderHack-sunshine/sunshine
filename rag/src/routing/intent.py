@@ -18,6 +18,7 @@ _STOP = {
     "как", "что", "это", "эта", "этот", "или", "для", "при", "на", "в", "во", "по", "с", "и", "а",
     "мне", "нужно", "можно", "ли", "пожалуйста", "портал", "поставщиков",
 }
+_NON_OBJECT_TERMS = {"электронный", "подпись", "ошибка", "проблема", "работа", "документ", "инструкция"}
 _ACTION_CLASSES = {
     "create": ("созда", "сформир", "оформ"),
     "add_upload": ("добав", "загруз", "прикреп", "импорт"),
@@ -68,6 +69,14 @@ class DomainLexicon:
                 # are not object names and would overfit retrieval documents.
                 if normalized and 1 <= len(words) <= 6:
                     phrases.add(normalized)
+                    # Titles also contain a compact domain noun (for example,
+                    # an entity mentioned inside a procedural heading). Keep
+                    # those corpus-derived terms separately from the complete
+                    # heading so an inflected object can be recognised without
+                    # treating the heading's action as the requested action.
+                    for word in words:
+                        if len(word) >= 4 and word not in _NON_OBJECT_TERMS and action_from_text(word) is None:
+                            phrases.add(word)
         return cls(version=version, objects=tuple(sorted(phrases, key=lambda item: (-len(item), item))))
 
     def match(self, query: str) -> str | None:
@@ -82,6 +91,9 @@ class DomainLexicon:
                 score = 2.0 + len(phrase_terms) / 100
             else:
                 overlap = len(query_terms & phrase_terms)
+                if len(phrase_terms) == 1 and overlap == 0:
+                    term = next(iter(phrase_terms))
+                    overlap = int(any(_lexical_key(token) == _lexical_key(term) for token in query_terms))
                 # Require every meaningful term for short taxonomy labels, or
                 # a strong majority for longer labels. This avoids matching a
                 # document merely because of a generic verb.
@@ -124,6 +136,10 @@ def action_from_text(query: str) -> str | None:
         if any(stem in normalized for stem in stems):
             return action
     return None
+
+
+def _lexical_key(value: str) -> str:
+    return value.casefold()[:5]
 
 
 def extract_intent_frame(query: str, lexicon: DomainLexicon) -> IntentFrame:

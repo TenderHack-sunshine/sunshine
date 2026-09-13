@@ -84,7 +84,7 @@ function toSources(sources: ApiSource[] = []): Source[] {
 
 function historyStatus(status: RequestStatus): HistoryStatus {
   if (status === "processing" || status === "ai_failed") return "active";
-  if (status === "need_clarification") return "info";
+  if (status === "need_clarification" || status === "offer_handoff") return "info";
   if (status === "escalated") return "escalated";
   return "done";
 }
@@ -118,7 +118,7 @@ function historyItem(request: ApiSupportRequest): HistoryItem {
 
 function chatStateForRequest(status: RequestStatus): ChatState {
   if (status === "processing") return "processing";
-  if (status === "need_clarification") return "needs_clarification";
+  if (status === "need_clarification" || status === "offer_handoff") return "needs_clarification";
   if (status === "escalated") return "escalated";
   if (status === "answered" || status === "blocked") return "answered";
   return "idle";
@@ -135,7 +135,7 @@ function messagesFromApi(messages: ApiMessage[], request: ApiSupportRequest): Me
       time: formatTime(message.created_at),
       text: message.text,
       requestId: request.id,
-      isClarification: isAssistant && request.status === "need_clarification",
+      isClarification: isAssistant && (request.status === "need_clarification" || request.status === "offer_handoff"),
       isEscalated: isAssistant && request.status === "escalated",
       sources: sources.length ? sources : undefined,
     };
@@ -248,6 +248,12 @@ export default function App() {
       addMsg({ ...shared, text: response.clarification_question || "Уточните детали обращения.", isClarification: true });
       setChatState("needs_clarification");
       announce("Нужно уточнение");
+      return;
+    }
+    if (response.status === "offer_handoff") {
+      addMsg({ ...shared, text: response.support || "Не нашёл достаточно подтверждённой информации. Передать обращение сотруднику поддержки?", isClarification: true });
+      setChatState("needs_clarification");
+      announce("Можно передать обращение сотруднику");
       return;
     }
     if (response.status === "escalated") {
