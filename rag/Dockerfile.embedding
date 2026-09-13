@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
     && pip install --no-cache-dir "sentence-transformers>=3.0,<4"
 
 COPY src ./src
-COPY scripts/embedding_worker.py ./scripts/embedding_worker.py
+COPY scripts/embedding_worker.py scripts/provision_embedding_model.py ./scripts/
 
 ENV PYTHONPATH=/app PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 EXPOSE 8765

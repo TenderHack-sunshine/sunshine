@@ -4,9 +4,24 @@
 
 The supported runtime is one Docker Compose stack: PostgreSQL, Qdrant, a
 Qwen3 embedding worker, Ollama with `qwen3:1.7b`, the RAG API, Go API, and
-frontend. `docker compose up --build -d` downloads the Qwen model once into a
-named Docker volume; the first start is therefore much longer than subsequent
-starts. Open `http://localhost:5173` after all services are healthy.
+frontend. Model weights are deliberately not committed to Git. On a fresh
+clone, provision them once (this is the only model-download step):
+
+```powershell
+docker compose --profile provisioning up --build model-init embedding-model-init
+```
+
+Then start the fully local runtime:
+
+```powershell
+docker compose up --build -d
+```
+
+The provisioning step creates `rag/models/qwen3-embedding-0.6b` and the
+named Ollama volume. These are the only artifacts participants need to copy
+for an offline setup; the canonical corpus and ticket BM25 index are already
+versioned in the repository. Open `http://localhost:5173` after all services
+are healthy.
 
 The answer model is Qwen3 1.7B (Ollama's CPU quantized build). It is invoked only
 after retrieval and safety gates, receives the user question plus up to three

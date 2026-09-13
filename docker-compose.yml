@@ -57,6 +57,19 @@ services:
     profiles: ["provisioning"]
     restart: on-failure
 
+  embedding-model-init:
+    build:
+      context: ./rag
+      dockerfile: Dockerfile.embedding
+    command: ["python", "scripts/provision_embedding_model.py"]
+    environment:
+      MODEL_DIR: /models
+      EMBEDDING_MODEL_REPOSITORY: Qwen/Qwen3-Embedding-0.6B
+    volumes:
+      - ./rag/models:/models
+    profiles: ["provisioning"]
+    restart: "no"
+
   indexer:
     build:
       context: ./rag
