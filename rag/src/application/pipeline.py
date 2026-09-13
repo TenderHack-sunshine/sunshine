@@ -202,7 +202,10 @@ class RAGService:
         """Accept legacy extractive test adapters while Qwen gets the query."""
         parameters = inspect.signature(self.generator.answer).parameters
         if "query" in parameters:
-            return self.generator.answer(candidates, query=query, answer_type=answer_type)
+            kwargs = {"query": query}
+            if "answer_type" in parameters:
+                kwargs["answer_type"] = answer_type
+            return self.generator.answer(candidates, **kwargs)
         return self.generator.answer(candidates)
 
     def _generation_evidence(self, query: str, candidates: list[dict]) -> list[dict]:
